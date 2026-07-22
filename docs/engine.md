@@ -15,15 +15,23 @@ assembly is [`context.md`](context.md) §5, budget enforcement is
 
 ## 1. The turn engine (`core/engine.py`)
 
-`Engine.run_turn(session, user_message)` advances a session by exactly one turn.
-It is **interface-agnostic** — CLI, worker, and HTTP surfaces all drive this one
-entry point — and the innermost dispatch is a `TurnDispatcher` protocol, so tests
-swap in scripted fakes without touching the chain.
+`Engine.run_turn(session, user_message=None, deadline_seconds=None)` advances a
+session by exactly one turn. It is **interface-agnostic** — CLI, worker, and HTTP
+surfaces all drive this one entry point — and the innermost dispatch is a
+`TurnDispatcher` protocol, so tests swap in scripted fakes without touching the
+chain.
+
+The `deadline_seconds` parameter wraps the whole chain in `asyncio.timeout`; a
+`TimeoutError` calls `turn.abort(...)` and returns the aborted turn without
+re-raising.
 
 The turn contract:
 
 - The user message (if any) appends to `session.messages`; the engine snapshots
   the pre-turn count and builds a `Turn` with a **copy** of the history.
+- Turn attribution: `bind_turn` / `unbind_turn` (from `agentix.drivers.session`)
+  bracket the chain call so every nested driver invocation (LLM call, vendor I/O)
+  carries the current `turn_index` for log and usage attribution.
 - The composed middleware chain runs; a turn still `pending` after the inner
   dispatch becomes `ok`.
 - On `ok`, the dispatcher's additions to `input_messages` (assistant tool-calls +
@@ -57,8 +65,8 @@ new layer means changing `MIDDLEWARE_ORDER` itself ([`seams.md`](seams.md) §9).
 | 2 | **CostTracking** | telemetry-only: stamps `turn.cost_usd` + cache-read ratio; real recording is at the call boundary ([`budgets.md`](budgets.md) §3) |
 | 3 | **TokenBudget** | the money-cap enforcer: warn at 80%, compress-before-abort, clean abort ([`budgets.md`](budgets.md) §4) |
 | 4 | **ToolCallCountCap** | thrash circuit breaker: same tool **N times total** across the session |
-| 5 | **LoopDetection** | stuck-agent breaker: same tool + same args **N times in a row**, and repeated-behaviour patterns |
-| 6 | **Retry** | bounded, jittered backoff — retries only provider errors classified retryable (`LlmRateLimit`/`LlmUnavailable`); `LlmInvalidRequest` bails immediately; tool failures are **not** retried here (tools own their errors, [`tools.md`](tools.md) §7) |
+| 5 | **LoopDetection** | stuck-agent breaker: same tool + same args **N times in a row**, or same assistant text **N times in a row** |
+| 6 | **Retry** | bounded, jittered backoff — retries only provider errors classified retryable (`DriverRateLimited`/`DriverUnavailable`); `DriverInvalidRequest` bails immediately; tool failures are **not** retried here (tools own their errors, [`tools.md`](tools.md) §7) |
 | 7 | **DanglingToolCall** | stream repair before dispatch: crashes/partial resume can orphan a `tool_use` without its `tool_result` — the next LLM call would 400; this layer heals the history |
 | 8 | **SafetyGateMarker** | a pass-through **slot holder**: the real enforcement (dry-run, verifier, rollback) is the per-tool SafetyGate ([`tools.md`](tools.md) §5); the marker pins where safety sits in the order |
 | 9 | **MemoryMaintain** | the app-supplied maintain loop ([`memory.md`](memory.md) §6) |
@@ -75,6 +83,17 @@ driver ([`drivers.md`](drivers.md)), dispatch tool calls (per-call flow:
 `max_tool_iterations`. Side effects along the way: working-memory auto-record
 ([`memory.md`](memory.md) §2) and the throttled checkpoint cadence
 ([`session.md`](session.md) §3).
+
+**Parallel read dispatch**: when `parallel_reads=True` (the default), consecutive
+tool calls that all declare `mutates_target=False` are executed concurrently via
+`asyncio.TaskGroup`. Result order in the transcript always matches the original
+call order. Mutating calls and unknown-tool calls run sequentially. Set
+`parallel_reads=False` to revert to fully-sequential dispatch (e.g. for read tools
+with hidden side effects).
+
+**Cooperative cancellation** (seam 14): an optional `cancel_check: Callable[[], bool]`
+is polled between tool iterations. A `True` return aborts the turn cleanly without
+interrupting any in-flight tool I/O.
 
 App seams on the dispatcher: `TerminationPolicy` and `DispatchGuard`
 ([`seams.md`](seams.md)) — policy without forking the loop.

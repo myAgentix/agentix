@@ -4,11 +4,11 @@
 
 **Single source of truth for model routing in `docs/`.** Sections 1–3 document the
 landed routing surface (code: `src/agentix/drivers/router.py`, `drivers/factory.py`,
-the activation helpers in `config.py`); sections 4–7 are **DIRECTION** — **none of
-the policy layer landed in v0.5**. Neighbouring SSoTs are referenced, never restated
-(CRIE rule): the driver framework the routes run over is [`drivers.md`](drivers.md),
-cost recording and the money budget are [`budgets.md`](budgets.md), the per-step
-window budget is [`context.md`](context.md).
+`drivers/registry.py`, the activation helpers in `config.py`); sections 4–7 are
+**DIRECTION** — **none of the policy layer landed in v0.5**. Neighbouring SSoTs are
+referenced, never restated (CRIE rule): the driver framework the routes run over is
+[`drivers.md`](drivers.md), cost recording and the money budget are
+[`budgets.md`](budgets.md), the per-step window budget is [`context.md`](context.md).
 
 **Routing = deciding which model serves a given request.** Today that decision is
 static (an ordered chat failover chain composed at build time; registry defaults are
@@ -21,33 +21,51 @@ cost and escalation tier across the whole driver registry.
 
 One static route, decided at build time:
 
-- **Activation + priority** (`config.py`) — `enabled_providers(cfg)` returns the
-  active chat backends in `_PROVIDER_PRIORITY` order: direct gateway first (no extra
-  hop), then HUBLE, then Anthropic; Anthropic is the last resort when nothing is
-  configured. This single activation code path also feeds `derive_driver_specs`, so
-  the legacy provider blocks and the `drivers:` block cannot drift.
+- **Activation + priority** (`config.py`) — `derive_driver_specs(cfg)` is called by
+  `build_drivers` when `cfg.drivers` is empty, deriving specs from the legacy provider
+  blocks so the two config paths cannot drift. When `cfg.drivers` is populated, those
+  specs are used directly in declaration order.
 - **Composition** (`drivers/factory.py` `build_drivers`) — chat specs compose into
   ONE registered chat entry: a bare driver for a single spec, else a
   `ChatFailoverChain` in spec order; `always_chain=True` forces the chain wrapper so
   callers needing the chain surface (e.g. `set_failover_callback`) never
   isinstance-branch. `model_override` swaps the Melious/HUBLE model per build; the
   Anthropic fallback model deliberately stays as configured.
+- **Cost recording** — when `sqlite` is passed to `build_drivers`, each chat driver is
+  wrapped in `CostRecordingChatDriver` before entering the chain; spend is recorded
+  against `response.model` per call ([`budgets.md`](budgets.md) §3).
+- **Session-scoped leases** — specs with `scope="session"` are never instantiated at
+  build time; instead a per-credential builder is registered via
+  `registry.register_leasable(name, builder)`. Sessions obtain a fresh driver instance
+  with `async with registry.lease(name, credentials) as driver` (seam #13;
+  [`seams.md`](seams.md)).
+- **Embedding specs** — skipped when `sqlite is None` (the cache store is required);
+  a spec whose backend is unconfigured raises `EmbeddingError` and is skipped with a
+  debug log. Callers use `registry.embedding_or_none()` to handle the absent case.
 
 ## 2. `ChatFailoverChain` — failover semantics
 
 `drivers/router.py`. The chain holds the ordered drivers and is itself
 ChatDriver-compatible — callers never know whether they hold one adapter or a chain.
 
+- `name` is fixed at `"router"`. The `descriptor` property is **synthesized** (not
+  forwarded from any inner driver): `type="model"`, `modality="chat"`,
+  `source="api"`, `default_model` proxied to the first driver. Inner drivers may still
+  be pre-driver Provider objects during the migration window.
 - Dispatch tries each driver in order; **first success wins**.
 - Failover happens only on **retryable** errors (`DriverRateLimited`,
   `DriverUnavailable`); `DriverInvalidRequest` re-raises immediately — a malformed
   request won't get better on the next driver. The taxonomy is classified once at
   the adapter ([`drivers.md`](drivers.md) §1).
-- Every hop can notify an async `FailoverCallback` (constructor arg or
-  `set_failover_callback` after construction — the runner attaches a session-aware
-  callback once the session exists). Callback failures are swallowed: observability
-  must never take down dispatch.
-- If the whole chain fails: `NoDriversAvailable` carries the per-driver attempt list.
+- Every hop can notify an async `FailoverCallback` — signature
+  `(failed_driver_name: str, next_driver_name: str, error: DriverError) -> Awaitable[None]`.
+  Pass via constructor or attach later with `set_failover_callback` (the runner
+  attaches a session-aware callback once the session exists, avoiding chicken-and-egg
+  at driver-construction time). Callback failures are swallowed: observability must
+  never take down dispatch. The callback is **not** fired on the last attempt (that is
+  exhaustion, not failover).
+- If the whole chain fails: `NoDriversAvailable(attempts)` is raised, where `attempts`
+  is a `list[tuple[str, str]]` of `(driver_name, error_str)` pairs.
 - `default_model` proxies to the **first** driver — cost telemetry seeds from the
   primary, while actual per-call cost is recorded against `response.model`
   ([`budgets.md`](budgets.md) §3).
@@ -64,9 +82,12 @@ Tests: `tests/unit/drivers/test_failover_chain.py`,
   `reasoning_effort` — signals a routing policy could select on (§6), but nothing
   routes on them today.
 - The capacity limiter (`drivers/limiter.py`) bounds concurrency, not selection
-  ([`isolation.md`](isolation.md) §3 I5).
-- The registry's per-modality default (`registry.chat()`, `drivers.md` §6) is a
-  **lookup**, not a choice: declaration order / `default=True` decides.
+  ([`isolation.md`](isolation.md) §3 I5). Default ceiling is 8 concurrent external
+  model calls per process; override with `configure_driver_capacity(limit)` at startup.
+- The registry's per-modality default (`registry.chat()`, [`drivers.md`](drivers.md)
+  §6) is a **lookup**, not a choice: declaration order / `default=True` at
+  registration decides. `registry.embedding_or_none()` returns `None` when no
+  embedding backend is configured rather than raising.
 
 ---
 

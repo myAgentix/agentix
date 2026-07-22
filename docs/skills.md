@@ -73,9 +73,11 @@ first-root-wins on name clash (logs `skills.name_clash` warning).
   `examples`, `input_modes`, `output_modes`) populate `SkillBundle`.  Best-effort:
   unreadable bundles log a warning and are skipped.
 - `describe()` — `(name, description, skill_md_path)` rows for **session-start
-  surfacing**.
-- `activate(names, registry)` — registers skill-scoped tools across all roots by
-  delegating to the incumbent loader (§5).
+  surfacing**. When a bundle has no `SKILL.md`, `bundle_dir` is used as the path
+  fallback. Reference templates (`_`-prefixed) are excluded.
+- `activate(names, registry)` — registers skill-scoped tools for the named bundles
+  across all roots by delegating to `register_activated_skills` (§5). Results are
+  deduplicated across roots (first activation wins) before returning.
 - `SkillBundle.to_agent_skill()` — project into an A2A v1.0 `AgentSkill`; used
   by driver `publish_agent_card()` to build the card's `skills` list.
 
@@ -88,8 +90,11 @@ skill's description matches the situation, and gets the full `SKILL.md` body.
 - Why a dedicated tool: `read_file` is sandboxed to the task's source/output
   roots and **cannot reach `skills/`**. `consult_skill` reads from the agent's own
   catalog root (`ToolContext.skills_root`).
-- Bodies are small (~5 KB typical); capped defensively at 64 KB with a
-  `truncated` flag.
+- `ctx.skills_root` is `str | list[str]`; `consult_skill` passes it directly to
+  `SkillCatalog(root)`, so multi-root catalogs are transparently supported — a
+  driver-contributed skill is consultable in the same call as a kernel skill.
+- Bodies are small (~5 KB typical); capped defensively at 64,000 characters with a
+  `truncated` flag in `ConsultSkillOutput`.
 - Unknown name → actionable error listing the available skill names (reference
   templates excluded).
 
@@ -103,12 +108,19 @@ as the single tool-import path:
   one aggregate `skills.load_summary` log line.
 - `list_skill_manifests(root)` — manifests only, **no imports/registration**; used
   by a recon phase to evaluate trigger predicates before deciding activation.
+  Each returned dict gains a `_bundle_dir` key with the bundle's directory path.
 - `register_activated_skills(root, names, registry)` — import + register `tool.py`
   tools for the activated names only; doctrine-only skills count as activated with
-  zero tools. Not idempotent per registry — pass a fresh registry per session.
+  zero tools. Calling twice with the same registry re-registers tools, which
+  raises a duplicate-name error from the registry — pass a fresh registry per
+  session. Names in `activated_names` that match no manifest are logged as
+  `skill.activated_names_unresolved`.
+- `SkillManifestError` — raised when a `manifest.json` is malformed, missing
+  required keys (`name`, `version`), or when `tool.py` is missing its `register()`
+  function.
 - Manifest v2: `name` + `version` required; `tools` optional; `customer` accepted
   with a deprecation warning (skills are general, never per-customer); missing
-  `trigger` warns for production bundles.
+  `trigger` warns for production bundles (underscore-named bundles are exempt).
 
 **Status:** retiring as the *selection* mechanism (#470) — selection moves to
 model-driven `describe()` + `consult_skill` (§3–4). `manifest.json` survives only
@@ -123,7 +135,8 @@ as a carrier for live legacy bundles and their trigger wiring.
 - `ToolContext` carries the skill state (`tools/base.py`):
   `activated_skill_names` (bundles whose triggers matched, threaded into each
   per-step registry) and `skills_root: str | list[str]` (where `consult_skill`
-  reads from; default `"skills"`).  Pass a list to expose multiple catalogs.
+  reads from; default `"skills"`).  Pass a list to expose multiple catalogs to
+  both the catalog and `consult_skill` in a single session.
 
 ---
 

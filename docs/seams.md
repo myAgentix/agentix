@@ -2,18 +2,18 @@
 
 **Status:** living doc · **Scope:** Agentix kernel `[K]` (app-agnostic)
 
-![Kernel seams — 13 contact points colour-coded by category](assets/kernel-seams.svg)
+![Kernel seams — contact points colour-coded by category](assets/kernel-seams.svg)
 
 **Single source of truth for the kernel↔app seams in `docs/`** — the definitive
 catalog of how a purpose-specific app plugs into the generic kernel. Everything an
-app supplies enters through one of these 13 seams; everything else is
+app supplies enters through one of these seams; everything else is
 kernel-internal. Not to be confused with [`contracts.md`](contracts.md): a
 **seam** is an *in-process* contact point (a Python protocol, subclass or
 registration call — one process, one language); a **contract** is a *cross-process
 wire seam* between repos (versioned, serialized schemas, vendored + drift-guarded).
 LUDO examples below are illustrations of *an* app, not part of the kernel.
 
-## The 13 seams
+## The seams
 
 ### 1. Config — `KernelConfig` subclass
 `src/agentix/config.py`. A frozen dataclass with the kernel's resolved settings (storage
@@ -26,9 +26,9 @@ appends its own resolved fields; the kernel runtime factories accept the subclas
 `src/agentix/tools/safety.py` (`SafetyGate`; the flow: [`tools.md`](tools.md) §5). The
 kernel enforces verify-after-mutate; the app supplies the domain knowledge via three
 overrides:
-- `rollback()` — undo a mutation whose verification drifted (default: `NotImplementedError`).
-- `_resolve_contract()` — per-model verify contract + derived check fields (default: count+sample).
-- `_derive_verifier_fields()` — map tool-input fields the verifier can't name-match (default: `{}`).
+- `rollback(ctx, *, tool, input, model)` — undo a mutation whose verification drifted (default: `NotImplementedError`).
+- `_resolve_contract(ctx, model)` — per-model verify contract + derived check fields (default: count+sample, returns `(None, [])`).
+- `_derive_verifier_fields(source, target_fields)` — map tool-input fields the verifier can't name-match (default: `{}`).
 *LUDO:* `OdooSafetyGate` rolls back via xmlid-scoped unlink and reads its rename-map memory.
 
 ### 3. TerminationPolicy — protocol
@@ -45,17 +45,24 @@ tool call; returns a synthesized failure `ToolCallResult` to refuse it, or `None
 
 ### 5. Tool protocol — register domain tools
 `src/agentix/tools/base.py` (`Tool`, runtime-checkable protocol: `name`, `description`,
-`input_schema`, `output_schema`, `mutates_target`, `verifier`, `async call()` —
-[`tools.md`](tools.md) §1). The app implements it — no subclassing needed — and registers
-in the `ToolRegistry`. App exceptions may expose `to_error_details()` (dispatcher hook) to
+`input_schema`, `output_schema`, `mutates_target`, `verifier`, `required_provider`,
+`advertised`, `async call()` — [`tools.md`](tools.md) §1). The app implements it — no
+subclassing needed — and registers in the `ToolRegistry`. `required_provider` gates
+registration on a provider being configured (`None` = always registrable; `"llm"` = any
+provider; a concrete name matches only that provider). `advertised=False` keeps a tool
+resident in the registry but removes it from the per-turn LLM menu (used for sub-tools
+behind a facade). App exceptions may expose `to_error_details()` (dispatcher hook) to
 return structured error payloads.
 *LUDO:* ~40 migration tools (extract/load/discover/pin/diagnose…).
 
 ### 6. ToolContext injection — opaque app handles
 `src/agentix/tools/base.py` (`ToolContext` — [`tools.md`](tools.md) §1). `source` /
 `target` are untyped handles the app fills with its own clients; the kernel never inspects
-them. Tools access via `ctx.require_source()` / `ctx.require_target()`.
-*LUDO:* source/target Odoo RPC clients.
+them. Tools access via `ctx.require_source()` / `ctx.require_target()`. `dry_run` is the
+kernel's mutate-block flag (set by the caller; `SafetyGate` checks it). `embeddings` is an
+optional `EmbeddingDriver` injected per-session; `None` signals tools to fall back to the
+lexical baseline.
+*LUDO:* source/target Odoo RPC clients; embeddings from `huble-embedding`.
 
 ### 7. Sandbox allowlists + agent identity — startup extenders
 `src/agentix/tools/spike/web_fetch.py` (`register_allowed_hosts`),
@@ -79,7 +86,7 @@ bodies load on demand.  `SkillBundle.to_agent_skill()` projects into an A2A `Age
 `Engine(middlewares=…)`, checked by `validate_order` ([`engine.md`](engine.md) §2–3).
 The order is a fixed tuple of **named slots**; `validate_order` accepts only a
 **prefix** of it — no reordering, no free appends. The app's extension point is the
-**`MemoryMaintain` slot** (position 9, deliberately app-supplied — the kernel cannot
+**`MemoryMaintain` slot** (position 9, last — deliberately app-supplied; the kernel cannot
 know what a finding means in a domain). Adding any *new* layer means changing
 `MIDDLEWARE_ORDER` itself — a kernel change, by design.
 *LUDO:* `MemoryMaintain` (ingest→lint→reconcile→promote at session end,
@@ -95,10 +102,10 @@ transport under a store is also swappable via a storage-type driver
 
 ### 11. Events out — bus sink + neutral envelope
 `src/agentix/events.py`: the global `bus` and the neutral `SessionEvent` (6-field
-envelope; types in `agentix.event_types`). The app registers a global sink to
-forward events to its own transport. The kernel knows no broker. This is the one
-seam that touches a wire contract: the envelope is pinned to Contract B
-([`contracts.md`](contracts.md) §2) by `test_event_contract_drift` — equality
+envelope; types in `agentix.event_types`). The app registers a global sink via
+`bus.add_sink(sink)` to forward events to its own transport. The kernel knows no
+broker. This is the one seam that touches a wire contract: the envelope is pinned to
+Contract B ([`contracts.md`](contracts.md) §2) by `test_event_contract_drift` — equality
 without import.
 *LUDO:* a NATS forwarder republishes every event to JetStream.
 
@@ -113,11 +120,11 @@ discovery is deliberately rejected (ambient imports defeat the purity gates).
 For systems whose credentials arrive per job/tenant, the **lease path** adds
 `DriverSpec(scope="session")` + `registry.lease(name, credentials)` — a fresh
 instance per session, invisible to name lookup, drained by
-`session_scope(sid, registry=...)` / `aclose_all()` (drivers.md §6).
+`registry.aclose_session_leases(session_id)` / `aclose_all()` ([`drivers.md`](drivers.md) §6).
 *LUDO:* the agentix-driver-odoo (`type="erp"`, Agentix-Kernel/agentix-driver-odoo) registers here as a session-leased driver —
 source/target Odoo credentials are vault-decrypted per job.
 
-### 14. Cooperative-cancellation check — `cancel_check` callable
+### 13. Cooperative-cancellation check — `cancel_check` callable
 `src/agentix/core/agent_dispatcher.py` (`AgentDispatcher(cancel_check=…)`): an optional
 `Callable[[], bool]` supplied by the app at dispatcher construction time. Polled at the
 top of every tool-iteration cycle — after the iteration guard, before the LLM call — so
@@ -126,7 +133,21 @@ tool I/O. When `cancel_check()` returns `True` the dispatcher calls `turn.abort(
 returns; the engine then sets `session.status = "paused"`.
 *LUDO:* `CancelRegistry.is_cancelled` (ludo-agent) wrapped in a zero-arg lambda.
 
-### 13. Idempotency / resume-key provider — *(design seam — no code hook yet)*
+### 14. agentixd plugin seams — `register(state, tool_registry)`
+`src/agentixd/kernel.py` (`KernelState`). Plugin packages declared in
+`cfg.plugin_packages` are imported as `<pkg>.plugin` and their `register(state,
+tool_registry)` hook is called after the driver registry and tool builtins are built.
+Three in-process contact points are exposed through `state`:
+- `state._session_engine_factory` — a callable `(KernelState, Session, app_meta | None) → Engine` the plugin sets to inject a per-session middleware chain (e.g. LUDO's 9-layer chain); the daemon falls back to the global no-middleware engine when unset.
+- `state._session_extras` — `{session_id: dict}` the plugin populates per session (e.g. `source`, `target`, `embeddings`, `dry_run`) so `ctx_factory` can inject them into `ToolContext`.
+- `state._pre_turn_hook` — reserved for a per-turn callback before the engine dispatches; set by the plugin, polled by the daemon route.
+
+Plugins may also expose `skills_roots() → list[str]` to register additional skill
+directories; these are merged with the kernel's own `.skills/` root and passed as
+`ToolContext.skills_root`.
+*LUDO:* `ludo_agent.plugin` sets `_session_engine_factory` to build the 9-layer middleware chain and populates `_session_extras` with per-job Odoo client handles.
+
+### 15. Idempotency / resume-key provider — *(design seam — no code hook yet)*
 On redelivery the kernel restores only the agent's own state
 (`resume_or_create`, [`session.md`](session.md) §4); **what work is already done on
 the outside is the app's concern**. The app defines the idempotency mechanism that
@@ -134,7 +155,7 @@ makes redelivered writes safe ([`isolation.md`](isolation.md) §6). A formal ker
 protocol for the resume key is an open design item (session.md clause 4).
 *LUDO:* the deterministic record census — redelivered writes become no-op-or-update.
 
-## The midlayer note (not a 14th seam)
+## The midlayer note (not a numbered seam)
 
 The driver-midlayer primitives ([`tools.md`](tools.md) §8) are not a new seam —
 they are the mechanism/policy line expressed as function parameters: the kernel

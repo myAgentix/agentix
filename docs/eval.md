@@ -3,10 +3,11 @@
 **Status:** living doc · **Scope:** Agentix kernel `[K]` (app-agnostic)
 
 **Single source of truth for evaluation in `docs/`.** Sections 1–2 document the
-landed kernel pieces (code: `src/agentix/drivers/adapters/adversarial.py`, the honesty columns in
-`storage/sqlite_store.py`, the safety gate); sections 3–6 are **DIRECTION** —
-consolidated from the retired proposal `ludo-agent/docs/proposals/eval-validation.md`.
-Tracking: epic [Ludo-Odoo-Migrations/ludo-agent #505](https://github.com/Ludo-Odoo-Migrations/ludo-agent/issues/505),
+landed kernel pieces (code: `src/agentix/drivers/adapters/intrinsic/adversarial.py`,
+the honesty columns in `storage/sqlite_store.py`, the safety gate); sections 3–6
+are **DIRECTION** — consolidated from the retired proposal
+`ludo-agent/docs/proposals/eval-validation.md`. Tracking: epic
+[Ludo-Odoo-Migrations/ludo-agent #505](https://github.com/Ludo-Odoo-Migrations/ludo-agent/issues/505),
 workstreams E1–E5 (#506–510). Scope is **runtime-only**: validating live responses
 and outcomes — no offline eval harness, golden datasets, or CI regression scoring
 this round (deliberate anti-scope), and no metrics dashboard.
@@ -22,6 +23,7 @@ from verification, never from the model's own claim.**
   verification, not from prose (`storage/sqlite_store.py`, schema v7+); with
   `sessions.intervention_type` (the human-touchpoint metric) it forms the honesty
   ledger ([`session.md`](session.md) §7) that feeds the autonomy metric.
+  Written via `SqliteStore.set_outcome(session_id, outcome)`.
 - The **SafetyGate** verify-then-rollback contract ([`tools.md`](tools.md) §5) is
   per-mutation outcome verification: every mutating tool call is followed by its
   declared verifier, and drift rolls back. In Grader terms (§5), the gate *is* the
@@ -30,15 +32,28 @@ from verification, never from the model's own claim.**
 
 ## 2. The adversarial refute pass
 
-`drivers/adapters/adversarial.py` — one reusable refute primitive, the landed seed of Grader A:
+`drivers/adapters/intrinsic/adversarial.py` — one reusable async refute primitive,
+the landed seed of Grader A:
 
-- `refute(provider, claim_description=…, refute_prompt_template=…)` runs a second
-  LLM call prompted to find why the claim could be **wrong**, returning
-  `(refuted, reason)`; callers demote confidence on a credible refutation.
+```python
+async def refute(
+    provider: ChatDriver,
+    *,
+    claim_description: str,
+    refute_prompt_template: str,
+) -> tuple[bool, str]: ...
+```
+
+- Runs a second LLM call via `provider` (a `ChatDriver`) prompted to find why
+  `claim_description` could be **wrong**, returning `(refuted, reason)`; callers
+  demote confidence on a credible refutation.
+- The template's `{claim}` slot is replaced with `claim_description`; the template
+  must instruct JSON output matching `{"refuted": bool, "reason": str}`.
 - **Best-effort by design** — a failed call or unparseable response degrades to
   `(False, <diagnostic>)`; an LLM-based check must never silently hard-block (§6).
 - Disable via `AGENTIX_ADVERSARIAL_DISABLED`. Prompt templates live with the
   calling primitive, not here.
+- `is_disabled() -> bool` is exported alongside `refute`; both in `__all__`.
 
 ---
 

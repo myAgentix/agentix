@@ -67,25 +67,70 @@ an attempt — lessons are never lost to a crash. Tests:
 ## 3. The markdown memory store — Episodic + Learnings substrate
 
 `storage/memory.py`. Disk primitives over a directory of markdown files with YAML
-frontmatter (`MemoryStore(root)`, `MemoryPage`).
+frontmatter.
+
+### Construction
+
+`MemoryStore` accepts either a root path or an injected driver (since v0.5.3):
+
+```python
+MemoryStore(root="/path/to/memory")          # local filesystem via LocalFileStoreDriver
+MemoryStore(driver=some_driver)              # alternate backend (WebDAV, SMB, …)
+```
+
+The physical medium lives behind the `agentix.drivers.file_store.FileStoreDriver`
+protocol — the default backend is the local filesystem
+(`drivers/adapters/intrinsic/local_fs.py`: fcntl locks, git pin). A `driver`
+property exposes the transport for registry wiring.
+
+`MemoryPage` is the parsed representation: `frontmatter` (dict) · `preamble`
+(content before the first H2) · `sections` (ordered `{heading: body}` map). Its
+`render()` method reassembles the page to round-trip-stable markdown.
+
+### Page API
 
 - **Section-preserving writes** — callers mutate **one H2 section at a time**
   (`write_section`); other sections and the frontmatter stay byte-identical.
-  Also: `read_page` / `write_page` / `create_page` / `update_frontmatter` /
-  `list_pages`; `append_to_log` serialises `log.md` behind an asyncio lock.
-- **Advisory locks** — `lock(name)`: exponential backoff up to a timeout,
-  `MemoryLockTimeout` on failure; the mechanism is the file-store driver's
-  (locally: non-blocking `fcntl.flock` on `.locks/<name>.lock` under the
-  memory root). Covers both same-process
-  (`asyncio.gather`) and cross-process contention. Namespaced names by
-  convention (`customer-<id>`, `reconcile-<key>`); `lock_for_customer(id)` is the
-  readable wrapper. **Single-node only** — multi-node needs a DB advisory lock.
-- **Git pin** — `head_sha()` lets a session record which memory state it ran
-  against (the store is expected to be git-backed).
-- **Maintenance helpers** — `find_orphan_pages` (pages `index.md` never links;
-  the cheap lint) and `promote_evidence` (bookkeeping only: append to
-  `confirmed_by`, bump `evidence_count`, return whether the threshold is
-  crossed — *deciding* to promote stays the model's/operator's job).
+- Full-page methods: `read_page` / `write_page` / `create_page` / `update_frontmatter`.
+- `list_pages(relative_dir)` — returns every `.md` file under the dir, sorted.
+- `path_log()` / `path_index()` — resolved `Path` helpers for `log.md` and
+  `index.md` under the memory root.
+
+### Log append
+
+`append_to_log(type, subject, body)` serialises writes to `log.md` behind an
+asyncio lock so concurrent calls cannot corrupt the ordering. Each entry is
+formatted as:
+
+```
+## [YYYY-MM-DD] <type> | <subject>
+<body>
+```
+
+### Advisory locks
+
+`lock(name, *, timeout_seconds=10.0)`: exponential backoff up to a timeout,
+`MemoryLockTimeout` on failure. The mechanism is the file-store driver's
+(locally: non-blocking `fcntl.flock` on `.locks/<name>.lock` under the memory
+root). Covers both same-process (`asyncio.gather`) and cross-process contention.
+Namespaced names by convention (`customer-<id>`, `reconcile-<key>`);
+`lock_for_customer(id)` is the readable wrapper for the common case.
+**Single-node only** — multi-node needs a DB advisory lock (arch.md §10.2).
+
+### Git pin
+
+`head_sha()` lets a session record which memory state it ran against (the store
+is expected to be git-backed). Returns `None` when outside a git repo or on a
+backend that carries no version pin — callers treat that as "no pin, no drift
+check".
+
+### Maintenance helpers
+
+- `find_orphan_pages(relative_dir, *, index_path)` — pages `index.md` never
+  links; the cheap lint.
+- `promote_evidence(target_relative, customer_id, threshold)` — bookkeeping only:
+  append to `confirmed_by`, bump `evidence_count`, return whether the threshold
+  is crossed. *Deciding* to promote stays the model's/operator's job.
 
 Tests: `tests/unit/storage/test_memory.py`.
 
@@ -97,8 +142,9 @@ that token-overlap misses).
 
 - `EmbeddingDriver` protocol ([`drivers.md`](drivers.md) §3); shipped backends: OpenAI
   (`text-embedding-3-small`) and Huble. Pluggable — vendor neutrality survives.
-- `CosineIndex` — pure-Python in-memory cosine similarity; fine to ~10K entries,
-  swap to FAISS behind the same interface past that.
+- `CosineIndex` — pure-Python in-memory cosine similarity (`add(key, payload, vector)`,
+  `top_k(query_vec, k=3)`); fine to ~10K entries, swap to FAISS behind the same
+  interface past that.
 - `EmbeddingCache` — SQLite-backed (`embedding_cache` table on the existing
   store), keyed `sha256(model || text)` so provider swaps never return stale
   vectors; vectors stored as packed float32 blobs.

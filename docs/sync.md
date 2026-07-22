@@ -1,9 +1,9 @@
-# Sync — the OT / synchronous-integration plan
+# Sync — the OT / synchronous-integration facade
 
-**Status:** direction doc · **Scope:** Agentix kernel `[K]` (app-agnostic)
+**Status:** living doc · **Scope:** Agentix kernel `[K]` (app-agnostic)
 
-**The plan for serving OT (operational-technology / industrial) workloads on the
-async kernel.** Everything here is DIRECTION except the decision record in §1.
+**The sync facade (`agentix.sync`) and the broader plan for serving OT
+(operational-technology / industrial) workloads on the async kernel.**
 The async execution model it builds on is [`async.md`](async.md).
 
 ---
@@ -60,7 +60,7 @@ The questions to settle before committing an OT profile, worked here first:
 
 | OT need | Facility | Status |
 |---|---|---|
-| Bounded latency per turn | turn deadline: `run_turn(..., deadline_seconds=…)` → clean abort → `paused` | #71 |
+| Bounded latency per turn | `Engine.run_turn(..., deadline_seconds=…)` → `asyncio.timeout` → clean abort → `paused` | landed |
 | No runaway work | cooperative cancellation checked between tool iterations | #72 |
 | Crash detection / takeover | lease heartbeat + reaper ([`session.md`](session.md) §6) | landed |
 | Admission control | `configure_driver_capacity` gate ([`async.md`](async.md) §6) | landed |
@@ -74,35 +74,128 @@ The questions to settle before committing an OT profile, worked here first:
 preforking WSGI hosts (the second stack consumer embeds the kernel in Odoo
 worker processes), OT toolchains, plain scripts:
 
-- **`KernelLoop`** — one dedicated background event-loop thread per process,
-  not per-call `asyncio.run`, so per-loop limiter state and `ContextVar`
-  binding ([`async.md`](async.md) §4) stay consistent across calls.
-  `start()` idempotent / `stop()` / `submit(coro, timeout_seconds=…)`.
-- **Fork-aware** (the §4 sketch predated this; preforking hosts forced it):
-  the loop records its pid at `start()`, `submit()` refuses a pid mismatch,
-  and an `os.register_at_fork` hook resets forked children to a cold,
-  unstarted loop. Rule for integrators: **lazy-init post-fork on first use —
-  never at import time, never in a pre-fork master.**
-- **`SyncFacade`** — blocking wrappers (`create_session`, `resume_or_create`,
-  `run_turn` — which binds `session_scope` around the engine call — and a
-  generic `run()` escape hatch) submit via
-  `asyncio.run_coroutine_threadsafe` and block on the future.
-  `start()` boots the loop, initialises the stores and reaps expired-lease
-  orphans once; `close()` stops an owned loop.
-- **Admission gate**: `admission_limit` (default **1** — single-flight until
-  #39 lands per-task store connections) with `admission_timeout_seconds` →
-  `SyncFacadeBusy` (nothing started; the host decides). Fan-out stays the
-  async API's job.
-- **Deadline (pre-#71)**: `timeout_seconds` → `future.result(timeout)` +
-  cancel — abrupt task cancellation on the loop; structurally safe
-  (checkpoint-first), but the session row can be left `running` (hence the
-  reap at start). #71's `deadline_seconds` (clean abort → `paused`)
-  supersedes this path when it lands.
-- Storage for embedded hosts without a MinIO server: the local-fs object
-  driver — `MinioStore(driver=LocalObjectStoreDriver(root))`
-  ([`drivers.md`](drivers.md) §5, #92).
-- Side benefit outside OT: retires the reference app's ~10 hand-rolled
-  `asyncio.run` CLI bridges over time.
+### `KernelLoop`
+
+One dedicated background event-loop thread per process, not per-call
+`asyncio.run`, so per-loop limiter state and the attribution `ContextVar`
+binding ([`async.md`](async.md) §4) stay consistent across calls.
+
+```python
+loop = KernelLoop(thread_name="agentix-sync-loop")  # default name
+loop.start()          # idempotent within a process; spawns thread
+result = loop.submit(some_coro(), timeout_seconds=30.0)
+loop.stop()           # drains pending tasks, closes the loop, joins thread
+```
+
+`submit(coro, *, timeout_seconds=None)` bridges a coroutine onto the loop
+thread and blocks for the result. On timeout it cancels the task on the loop
+and raises `SyncDeadlineExceeded`.
+
+### Fork-awareness
+
+Preforking hosts (Gunicorn, uWSGI) fork *after* the master process has loaded
+the app. Threads do not survive `fork()`; a loop started in the master is dead
+in every worker.
+
+`KernelLoop` handles this:
+
+- Records `os.getpid()` at `start()`.
+- `submit()` compares current pid to recorded pid and raises `RuntimeError` on
+  mismatch — the inherited loop object is unusable.
+- A single module-level `os.register_at_fork(after_in_child=…)` hook (one
+  registration total, over a `weakref.WeakSet` of all live loops) calls
+  `_reset_after_fork()` on each loop in the child, dropping all references to
+  the inherited loop/thread without touching them.
+
+Rule for integrators: **lazy-init post-fork on first use — never at import
+time, never in a pre-fork master.**
+
+### `SyncFacade`
+
+Blocking wrappers over the session/turn API, sharing one `KernelLoop`.
+
+```python
+facade = SyncFacade(
+    sqlite=sqlite_store,
+    minio=minio_store,
+    loop=loop,               # optional; facade owns a KernelLoop if omitted
+    admission_limit=1,       # default: single-flight until #39 lands
+    admission_timeout_seconds=None,  # None = block forever
+)
+facade.start()   # boots loop, initialises stores, reaps expired-lease orphans
+```
+
+Available blocking wrappers — all acquire the admission gate first:
+
+```python
+session = facade.create_session(
+    customer_id="c-123",
+    budget_usd=200.0,
+    app_meta={},
+    control_plane_id=None,
+    timeout_seconds=None,
+)
+
+session, created = facade.resume_or_create(
+    customer_id="c-123",
+    control_plane_id="cp-456",
+    budget_usd=200.0,
+    app_meta={},
+    timeout_seconds=None,
+)
+
+turn = facade.run_turn(
+    engine,
+    session,
+    user_message=msg,   # optional
+    timeout_seconds=None,
+)
+
+result = facade.run(some_coro(), timeout_seconds=None)  # escape hatch
+```
+
+`run_turn` wraps the engine call inside `session_scope(session.id)` so every
+nested driver call attributes to the correct session. It does **not** pass
+`deadline_seconds` to the engine — host-side `timeout_seconds` is a different
+mechanism (see §4 deadline note below).
+
+`close(timeout_seconds=30.0)` stops the loop only if the facade owns it (i.e.
+no `loop` was passed at construction).
+
+### Admission gate
+
+`admission_limit` (default **1** — single-flight until #39 lands per-task store
+connections) is implemented with `threading.BoundedSemaphore`.
+`admission_timeout_seconds=None` blocks indefinitely; set a value to get
+`SyncFacadeBusy` (nothing was started; the host decides: retry, queue, tell
+the user). Fan-out is the async API's job, not this facade's.
+
+### Deadline paths (two distinct mechanisms)
+
+| Mechanism | Where enforced | Result | Session row |
+|---|---|---|---|
+| `timeout_seconds` on facade wrappers | host-side: `future.result(timeout)` + `future.cancel()` | `SyncDeadlineExceeded` | can be left `running` (reaped at next `start()`) |
+| `deadline_seconds` on `Engine.run_turn` | inside the loop: `asyncio.timeout` | clean abort → `paused` | correctly set to `paused` |
+
+The `deadline_seconds` path (clean abort) is available now via
+`SyncFacade.run()` wrapping a manually-constructed engine call:
+
+```python
+async def _bounded_turn():
+    async with session_scope(session.id):
+        return await engine.run_turn(session, msg, deadline_seconds=10.0)
+
+turn = facade.run(_bounded_turn())
+```
+
+### Storage for embedded hosts
+
+For hosts without a MinIO server: the local-fs object driver —
+`MinioStore(driver=LocalObjectStoreDriver(root))` ([`drivers.md`](drivers.md) §5, #92).
+
+### Side benefit
+
+Retires the reference app's hand-rolled `asyncio.run` CLI bridges over time.
 
 ## 5. Non-goals
 
@@ -116,7 +209,7 @@ worker processes), OT toolchains, plain scripts:
 ## 6. Tracked issues
 
 - #70 — `agentix.sync` blocking facade (dedicated loop thread) — **landed, v0.6.0** (§4)
-- #71 — turn deadline (`asyncio.timeout`, abort → `paused`)
+- #71 — turn deadline via facade `timeout_seconds` (pre-#71 path; clean-abort path already in `Engine.run_turn`)
 - #72 — cooperative-cancellation seam in the dispatcher
 - #67 — SessionRuntime: lift the session-run loop into the kernel
 - #39 — per-task SQLite connection (I2) — prerequisite for in-process fan-out

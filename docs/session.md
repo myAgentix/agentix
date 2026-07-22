@@ -24,6 +24,7 @@ one control-plane job. `core/session.py`; created via `create_session(...)`.
 | `customer_id` | the **opaque per-tenant id** — no PII ever enters session state |
 | `status` | lifecycle: `running` \| `paused` \| `completed` \| `failed` |
 | `messages`, `turn_index` | the conversation history the engine snapshots per turn |
+| `checkpoint` | name of the last written checkpoint blob (`None` until first save) |
 | `app_meta` | the app's session scope, **opaque to the kernel** (the reference app stores source/target version + target models here) — this is what keeps the kernel domain-free |
 | `control_plane_id` | binds the Session to the control plane's job id, so the gateway can project a resumable stream and drive resume without a side mapping; NULL for local runs |
 | `parent_session_id` | A2A delegation link — the Session that spawned this one; crossing rules (only distilled context crosses) are enforced above the store |
@@ -34,14 +35,15 @@ one control-plane job. `core/session.py`; created via `create_session(...)`.
 
 Split by store: **SQLite** holds operational metadata (tenant, status, totals,
 checkpoint pointer, `app_meta`); the **object store** holds the full state blob
-(`checkpoints/{session_id}/{checkpoint}.json` via `MinioStore.key_checkpoint`).
+under `blobs/<customer>/checkpoints/{session_id}/{checkpoint}.json` via
+`MinioStore.key_checkpoint`.
 
 `save()` writes **blob first, pointer second** — deliberately. If the process dies
 between the two, an unreferenced blob is harmless (bucket lifecycle collects it);
 the reverse order could leave SQLite pointing at a blob that never landed, and
 `resume_from` would fail on a checkpoint the row claims exists.
 
-Schema is versioned (currently **v14**) with idempotent migrations; full DDL:
+Schema is versioned (currently **v15**) with idempotent migrations; full DDL:
 [`sqlite_schema.sql`](sqlite_schema.sql).
 
 ## 3. Checkpoints — hybrid granularity
@@ -52,18 +54,20 @@ Schema is versioned (currently **v14**) with idempotent migrations; full DDL:
   sets `turn.checkpoint_saved_by_dispatcher` so the engine skips its redundant
   per-turn save. All best-effort — a persist failure logs, never kills the run.
 - **Named phase checkpoints** (`core/checkpoint.py`) — `save_checkpoint(session,
-  name)` at phase boundaries, `load_checkpoint` to read one back; the ordered
-  vocabulary lives in `ORDERED_CHECKPOINTS`. These are what operators resume from
-  by name.
+  name, *, sqlite, minio)` at phase boundaries, `load_checkpoint(customer_id,
+  session_id, name, *, minio)` to read one back. The checkpoint vocabulary is
+  app-defined; the kernel imposes no phase order or named constant set.
 
 ## 4. Resume
 
-- `resume_from(session_id)` rebuilds the in-memory `Session` from the SQLite row +
-  checkpoint blob — messages, working memory, totals, `app_meta`, all of it.
-- `resume_or_create(control_plane_id=…)` is **the generic resume-on-redelivery
-  seam**: the control plane reuses a stable job id on every redelivery; the first
-  run creates a Session bound to it, a redelivery finds that Session and restores
-  its in-context reasoning instead of starting over and re-paying model tokens.
+- `resume_from(session_id, *, sqlite, minio, checkpoint="latest")` rebuilds the
+  in-memory `Session` from the SQLite row + checkpoint blob — messages, working
+  memory, totals, `app_meta`, all of it.
+- `resume_or_create(sqlite, minio, *, customer_id, control_plane_id, ...)` is
+  **the generic resume-on-redelivery seam**: the control plane reuses a stable job
+  id on every redelivery; the first run creates a Session bound to it, a redelivery
+  finds that Session and restores its in-context reasoning instead of starting over
+  and re-paying model tokens.
   - Only `running`/`paused` are resumable; `completed`/`failed` are terminal — a
     redelivery starts fresh.
   - A resumable row whose blob is gone falls through to a **fresh create under the
@@ -79,12 +83,13 @@ Tests: `tests/unit/core/test_session_resume.py`.
 
 ## 5. The operator-checkpoint seam — pause for review
 
-`request_checkpoint(session, reason=…)` is how an app pauses a run at an
-autonomy-bar decision point: it marks the session `paused`, persists a checkpoint,
-and emits a `checkpoint_requested` event (`checkpoint_required=True`) so the
-control plane can surface "awaiting operator review". A paused session is
-resumable — `resume_or_create` restores it and the driver reactivates it to
-`running` when the operator resumes via the control plane's resume command.
+`request_checkpoint(session, *, sqlite, minio, reason, checkpoint="latest")` is how
+an app pauses a run at an autonomy-bar decision point: it marks the session `paused`,
+persists a checkpoint, and emits a `checkpoint_requested` event
+(`checkpoint_required=True`) so the control plane can surface "awaiting operator
+review". A paused session is resumable — `resume_or_create` restores it and the
+driver reactivates it to `running` when the operator resumes via the control plane's
+resume command.
 
 The event rides the in-process bus (`events.py`: subscribe-queue fan-out, no
 persistence, live observation); the app's worker bridges bus events onto the

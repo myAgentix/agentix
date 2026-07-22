@@ -66,15 +66,24 @@ immediately after the upstream returns.
   the call wasn't billed.
 - **Session binding** flows via the `current_session_id` ContextVar
   (`bind_session` / `session_scope`), so concurrent sessions never cross-contaminate.
-  The SQLite write is best-effort: a failure logs a warning, never kills the LLM call.
+  When the ContextVar is unset at call time, cost is not recorded and a loud
+  `cost_recorder.no_session_id_in_context` warning is emitted — any entry point that
+  fires model calls outside a `session_scope()` leaks cost visibility this way.
+  The SQLite write is best-effort: a failure logs a `cost_recorder.persist_failed`
+  warning, never kills the LLM call.
 - **Pricing** — `ModelPricing` (per-million USD: input / output / cached input) and the
   operator-supplied table `KernelConfig.llm_pricing`
   ([`kernel-config-reference.md`](kernel-config-reference.md)). Lookup strips dated
   model-id tails (`-<digits>`) so `claude-*-20250101` still resolves to its family row;
   a total miss falls to `FALLBACK_PRICING["__unknown__"]`, which deliberately
   **over-counts** — a wrong price must never under-count and run past the cap.
-- `CostTrackingMiddleware` is **telemetry-only** (stamps `turn.cost_usd`, cache-read
-  ratio, the `cost.recorded` log line); it no longer writes SQLite.
+- `CostTrackingMiddleware` is **telemetry-only**: it stamps `turn.cost_usd`, computes
+  the cache-read ratio diagnostic, and emits a `cost.turn_telemetry` log line per turn.
+  It no longer writes SQLite. The `persist_to_sqlite=True` constructor flag re-enables
+  the legacy write path for tests that do not set up `CostRecordingChatDriver`; new
+  tests should prefer the driver-level wiring. A `strict=True` flag causes the
+  middleware to raise when the model id falls through to `__unknown__` — useful in CI
+  to catch pricing-table gaps before they silently under-report spend.
 
 The ledger itself — `budget_usd`, `total_input_tokens`, `total_output_tokens`,
 `total_cost_usd` on the session row — and its read API are [`session.md`](session.md)
@@ -89,10 +98,14 @@ USD — the name predates the money framing):
 - At `warn_threshold` (default 0.80) it logs `budget.near_cap` — once per session, so an
   operator who miscalibrated the cap sees the concrete spend before the hard stop.
 - At the cap, **two levers before giving up**:
-  1. ask `ContextManager.compress_if_needed` to shrink the input (`budget.compressed`);
-     if it shrank, proceed — the next turn re-checks;
+  1. ask `ContextManager.compress_if_needed` to shrink the input (`budget.compressed`
+     log at INFO); if it shrank, proceed — the next turn re-checks;
   2. otherwise a **clean abort** — `turn.abort(...)` with the concrete numbers
-     (`budget.aborted`), never a raise, so the engine persists the aborted turn normally.
+     (`budget.aborted` log at WARNING), never a raise, so the engine persists the
+     aborted turn normally.
+- `ContextManager` is injected via the constructor (`context_manager=`). When omitted, a
+  default instance is constructed automatically — the compress-before-abort lever is
+  always live, not dead when a caller omits the builder (this was a previous silent bug).
 - The engine then marks the session **`paused`** — resumable, not dead: an operator can
   raise the ceiling and resume from the last checkpoint ([`session.md`](session.md) §4).
 - Middleware-side default is `budget_usd=25.0`; apps normally pass the session's own
