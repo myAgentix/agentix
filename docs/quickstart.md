@@ -3,7 +3,7 @@
 ## Install
 
 ```sh
-curl -LsSf https://raw.githubusercontent.com/Agentix-Kernel/agentix/main/scripts/install.sh | AGENTIX_EXTRAS=anthropic,daemon,sdk bash
+curl -LsSf https://raw.githubusercontent.com/myAgentix/agentix/main/scripts/install.sh | AGENTIX_EXTRAS=anthropic,daemon,sdk bash
 source ~/.agentix/env.sh
 ```
 

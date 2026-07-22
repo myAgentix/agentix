@@ -108,7 +108,7 @@ def _pr_mode(workspace: Path, sha: str) -> None:
                 "--title",
                 f"chore: re-vendor from agentix @{sha[:12]}",
                 "--body",
-                f"Automated re-vendor of canonical files from Agentix-Kernel/agentix commit {sha}.\n"
+                f"Automated re-vendor of canonical files from myAgentix/agentix commit {sha}.\n"
                 f"Files:\n"
                 + "\n".join(f"- {f}" for f in files)
                 + "\n\nGuards: check_shared/internal/config/contract_drift.py (hub). "

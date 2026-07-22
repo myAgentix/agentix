@@ -14,7 +14,7 @@ Date: 2026-07-16. Scope: docs + vendoring machinery references.
   now carries only the one-liner and points at the README matrix (single source).
 
 ## Integration efficiencies
-- All `github.com/euroblaze/...` references re-pointed to `Agentix-Kernel` /
+- All `github.com/euroblaze/...` references re-pointed to `myAgentix` /
   `Ludo-Odoo-Migrations` (7 install URLs, 8 issue links, install.sh, workflows) —
   no redirect dependency. `bot@euroblaze.de` kept (mail identity, not a repo ref).
 - revendor bot: `OWNER` constant replaced by `DEFAULT_OWNER` + `OWNER_BY_REPO`

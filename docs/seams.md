@@ -121,7 +121,7 @@ For systems whose credentials arrive per job/tenant, the **lease path** adds
 `DriverSpec(scope="session")` + `registry.lease(name, credentials)` — a fresh
 instance per session, invisible to name lookup, drained by
 `registry.aclose_session_leases(session_id)` / `aclose_all()` ([`drivers.md`](drivers.md) §6).
-*LUDO:* the agentix-driver-odoo (`type="erp"`, Agentix-Kernel/agentix-driver-odoo) registers here as a session-leased driver —
+*LUDO:* the agentix-driver-odoo (`type="erp"`, myAgentix/agentix-driver-odoo) registers here as a session-leased driver —
 source/target Odoo credentials are vault-decrypted per job.
 
 ### 13. Cooperative-cancellation check — `cancel_check` callable

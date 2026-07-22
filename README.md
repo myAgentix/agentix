@@ -20,16 +20,16 @@
 
 ```sh
 # Kernel only (intrinsic drivers: SQLite, local-fs, huble, hf-stt)
-curl -LsSf https://raw.githubusercontent.com/Agentix-Kernel/agentix/main/scripts/install.sh | bash
+curl -LsSf https://raw.githubusercontent.com/myAgentix/agentix/main/scripts/install.sh | bash
 
 # With a specific vendor LLM (accepts Anthropic ToS — see docs/vendor-licenses.md)
-curl -LsSf https://raw.githubusercontent.com/Agentix-Kernel/agentix/main/scripts/install.sh | AGENTIX_EXTRAS=anthropic bash
+curl -LsSf https://raw.githubusercontent.com/myAgentix/agentix/main/scripts/install.sh | AGENTIX_EXTRAS=anthropic bash
 
 # Multiple vendor extras
-curl -LsSf https://raw.githubusercontent.com/Agentix-Kernel/agentix/main/scripts/install.sh | AGENTIX_EXTRAS=anthropic,openai,groq bash
+curl -LsSf https://raw.githubusercontent.com/myAgentix/agentix/main/scripts/install.sh | AGENTIX_EXTRAS=anthropic,openai,groq bash
 
 # Custom install directory
-curl -LsSf https://raw.githubusercontent.com/Agentix-Kernel/agentix/main/scripts/install.sh | AGENTIX_HOME=~/myproject bash
+curl -LsSf https://raw.githubusercontent.com/myAgentix/agentix/main/scripts/install.sh | AGENTIX_HOME=~/myproject bash
 ```
 
 After install, activate: `source ~/.agentix/env.sh`
@@ -54,9 +54,9 @@ See [docs/vendor-licenses.md](docs/vendor-licenses.md) for SDK licenses and prov
 **With the CLI tools:**
 
 ```sh
-curl -LsSf https://raw.githubusercontent.com/Agentix-Kernel/agentix/main/scripts/install.sh | AGENTIX_EXTRAS=cli bash
+curl -LsSf https://raw.githubusercontent.com/myAgentix/agentix/main/scripts/install.sh | AGENTIX_EXTRAS=cli bash
 # combined with a vendor extra:
-curl -LsSf https://raw.githubusercontent.com/Agentix-Kernel/agentix/main/scripts/install.sh | AGENTIX_EXTRAS=anthropic,cli bash
+curl -LsSf https://raw.githubusercontent.com/myAgentix/agentix/main/scripts/install.sh | AGENTIX_EXTRAS=anthropic,cli bash
 ```
 
 **Developer install** (source checkout, Python 3.12 + [uv](https://docs.astral.sh/uv/)):
