@@ -145,6 +145,12 @@ Three in-process contact points are exposed through `state`:
 Plugins may also expose `skills_roots() → list[str]` to register additional skill
 directories; these are merged with the kernel's own `.skills/` root and passed as
 `ToolContext.skills_root`.
+
+Before `register()` is called the kernel runs `enforce_plugin_compliance(mod)`
+(`src/agentix/compliance.py`) — an AST-based structural scan.  A non-compliant
+plugin raises `DriverComplianceError` and the daemon refuses to start.  Full rule
+set and mandatory seams: [`docs/driver-compliance.md`](driver-compliance.md).
+
 *LUDO:* `ludo_agent.plugin` sets `_session_engine_factory` to build the 9-layer middleware chain and populates `_session_extras` with per-job Odoo client handles.
 
 ### 15. Idempotency / resume-key provider — *(design seam — no code hook yet)*
@@ -207,3 +213,8 @@ Enforced by three gates in `tests/unit/`:
   `ludo_shared`, or `ludo_internal` module.
 - `test_event_contract_drift.py` — the kernel's native event vocabulary stays equal to the
   cross-cluster wire contract (`contracts/session-event.schema.json`) without importing it.
+
+Integration drivers (plugin packages) are held to an additional structural gate:
+- `agentix.compliance` (`enforce_plugin_compliance`) — AST scan of every plugin's
+  source tree at daemon startup; daemon refuses to start if violations are found.
+  Rule set: [`docs/driver-compliance.md`](driver-compliance.md).

@@ -401,6 +401,7 @@ Canonical catalog with mechanisms and examples: [`docs/seams.md`](docs/seams.md)
 | [`docs/async.md`](docs/async.md) | • Async execution model: substrate, offload discipline<br>• loop/task-scoped state, app facilities, call-graph |
 | [`docs/sync.md`](docs/sync.md) | • OT / synchronous-integration plan: one-kernel decision<br>• SLM local-inference considerations, sync facade design |
 | [`docs/drivers.md`](docs/drivers.md) | • Driver framework: descriptor, registry, per-type protocols<br>• chat/embedding/stt families, seam #13 |
+| [`docs/driver-compliance.md`](docs/driver-compliance.md) | • Mandatory seams for integration drivers<br>• Five structural rules enforced at plugin load time<br>• `DriverComplianceError` — daemon refuses non-compliant plugin |
 | [`docs/routing.md`](docs/routing.md) | • Model routing: chain order, failover semantics<br>• direction: modality-general registry, policy seam |
 | [`docs/context.md`](docs/context.md) | • Window assembly, budget<br>• compression, eviction tiers, window report |
 | [`docs/memory.md`](docs/memory.md) | • Working memory, memory tiers<br>• page store, semantic recall |
