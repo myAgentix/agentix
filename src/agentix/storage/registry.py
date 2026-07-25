@@ -48,7 +48,8 @@ class MemoryRegistry:
 
     def __init__(self, driver: FileStoreDriver) -> None:
         self._driver = driver
-        self._index: dict[str, str] = {}   # slug → path
+        self._index: dict[str, str] = {}         # slug → path
+        self._meta: dict[str, dict[str, Any]] = {}  # slug → full entry
         self._loaded = False
         self._mu = asyncio.Lock()
 
@@ -82,6 +83,7 @@ class MemoryRegistry:
                     path = entry.get("path")
                     if slug and path:
                         self._index[slug] = path
+                        self._meta[slug] = entry
                 except json.JSONDecodeError:
                     log.warning("memory.registry.bad_line", line=line[:120])
             self._loaded = True
@@ -117,6 +119,7 @@ class MemoryRegistry:
             async with self._driver.lock("registry", timeout_seconds=10.0):
                 await self._driver.append_text(_REGISTRY_FILE, line)
             self._index[slug] = path
+            self._meta[slug] = entry
             log.debug("memory.registry.registered", slug=slug, path=path)
 
     def resolve(self, slug: str) -> str | None:
@@ -155,6 +158,25 @@ class MemoryRegistry:
                     await self._driver.write_text(_REGISTRY_FILE, compacted)
                     log.info("memory.registry.compacted", removed=removed, kept=len(seen))
                 return removed
+
+    def entries(
+        self,
+        *,
+        tier: str | None = None,
+        driver: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Return all known entries, optionally filtered by tier prefix or driver name.
+
+        ``load()`` must have been awaited before calling this.
+        Tier values: ``"ep"`` (episodic), ``"ln"`` (learnings), or ``None`` for all.
+        """
+        result = list(self._meta.values())
+        if tier:
+            prefix = f"{tier}/"
+            result = [e for e in result if e.get("slug", "").startswith(prefix)]
+        if driver:
+            result = [e for e in result if e.get("driver") == driver]
+        return result
 
     def __len__(self) -> int:
         return len(self._index)

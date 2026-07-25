@@ -23,6 +23,21 @@ from agentix.tools.primitives import (
     extract_json_object,
     fingerprint_dict,
 )
+from agentix.tools.memory_tools import (
+    MemoryRecallInput,
+    MemoryRecallOutput,
+    MemoryRegistryListInput,
+    MemoryRegistryListOutput,
+    MemorySearchInput,
+    MemorySearchOutput,
+    MemoryStoreInput,
+    MemoryStoreOutput,
+    RegistryEntry,
+    memory_recall,
+    memory_registry_list,
+    memory_search,
+    memory_store,
+)
 from agentix.tools.record_attempt import RecordAttemptInput, RecordAttemptOutput, record_attempt
 from agentix.tools.registry import ToolConflict, ToolRegistry
 from agentix.tools.resilience import (
@@ -35,8 +50,17 @@ from agentix.tools.resilience import (
 __all__ = [
     "FunctionTool",
     "HalvingExhausted",
+    "MemoryRecallInput",
+    "MemoryRecallOutput",
+    "MemoryRegistryListInput",
+    "MemoryRegistryListOutput",
+    "MemorySearchInput",
+    "MemorySearchOutput",
+    "MemoryStoreInput",
+    "MemoryStoreOutput",
     "RecordAttemptInput",
     "RecordAttemptOutput",
+    "RegistryEntry",
     "Tool",
     "ToolConflict",
     "ToolContext",
@@ -52,6 +76,10 @@ __all__ = [
     "extract_json_object",
     "fingerprint_dict",
     "halve_on_timeout",
+    "memory_recall",
+    "memory_registry_list",
+    "memory_search",
+    "memory_store",
     "record_attempt",
     "tool",
 ]

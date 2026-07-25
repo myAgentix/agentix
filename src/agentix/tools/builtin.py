@@ -11,6 +11,7 @@ app's ``register_builtin_tools`` calls ``register_kernel_tools`` then adds its O
 
 from __future__ import annotations
 
+from agentix.tools.memory_tools import memory_recall, memory_registry_list, memory_search, memory_store
 from agentix.tools.record_attempt import record_attempt
 from agentix.tools.registry import ToolRegistry
 from agentix.tools.spike.apply_patch import ApplyPatch
@@ -37,6 +38,10 @@ def register_kernel_tools(registry: ToolRegistry) -> None:
     registry.register(WebFetch())
     registry.register(WriteToFs())
     registry.register(record_attempt)
+    registry.register(memory_store)
+    registry.register(memory_recall)
+    registry.register(memory_search)
+    registry.register(memory_registry_list)
 
 
 def try_register_kernel_tools(registry: ToolRegistry) -> None:
@@ -46,7 +51,10 @@ def try_register_kernel_tools(registry: ToolRegistry) -> None:
     before calling plugin.register() — avoids ToolConflict without silencing
     genuine conflicts elsewhere.
     """
-    for t in (ReadFile(), GlobFiles(), GrepFiles(), WebFetch(), WriteToFs(), record_attempt):
+    for t in (
+        ReadFile(), GlobFiles(), GrepFiles(), WebFetch(), WriteToFs(), record_attempt,
+        memory_store, memory_recall, memory_search, memory_registry_list,
+    ):
         registry.try_register(t)
 
 
