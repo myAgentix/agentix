@@ -17,6 +17,8 @@ from agentixd._config import DaemonConfig
 
 # Project-root .skills/ directory — kernel-level user-managed skills
 _KERNEL_DOT_SKILLS = Path(__file__).resolve().parents[2] / ".skills"
+# Kernel-bundled skills shipped inside the agentix package
+_KERNEL_BUNDLED_SKILLS = Path(__file__).resolve().parents[1] / "agentix" / "skills" / "bundles"
 
 log = structlog.get_logger(__name__)
 
@@ -177,6 +179,12 @@ async def build_kernel(cfg: DaemonConfig) -> KernelState:
         kp = str(_KERNEL_DOT_SKILLS)
         plugin_skills_roots.insert(0, kp)
         root_layers[kp] = "kernel-user"
+
+    # Always include bundled kernel skills (lowest priority — plugins override).
+    if _KERNEL_BUNDLED_SKILLS.is_dir():
+        kp = str(_KERNEL_BUNDLED_SKILLS)
+        plugin_skills_roots.append(kp)
+        root_layers[kp] = "kernel"
 
     # 6. Dispatcher — session-scoped context factory closed over live stores.
     #    skills_root carries all plugin skill directories so consult_skill works.
