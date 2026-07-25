@@ -17,40 +17,50 @@ app = typer.Typer(help="Manage drivers (list, show, install, uninstall).")
 # ── driver metadata catalogue ──────────────────────────────────────────────
 
 _DRIVER_META: dict[str, dict[str, str]] = {
-    # vendor — require opt-in extra
-    "anthropic": {"type": "model", "modality": "chat", "source": "api", "extra": "anthropic", "sdk": "anthropic"},
-    "openai": {"type": "model", "modality": "chat", "source": "api", "extra": "openai", "sdk": "openai"},
-    "gemini": {"type": "model", "modality": "chat", "source": "api", "extra": "openai", "sdk": "openai"},
-    "groq": {"type": "model", "modality": "chat", "source": "api", "extra": "groq", "sdk": "groq"},
-    "ollama": {"type": "model", "modality": "chat", "source": "local", "extra": "openai", "sdk": "openai"},
-    "grok": {"type": "model", "modality": "chat", "source": "api", "extra": "openai", "sdk": "openai"},
-    "nvidia": {"type": "model", "modality": "chat", "source": "api", "extra": "openai", "sdk": "openai"},
-    "melious": {"type": "model", "modality": "chat", "source": "api", "extra": "openai", "sdk": "openai"},
-    "openai-embedding": {"type": "model", "modality": "embedding", "source": "api", "extra": "openai", "sdk": "openai"},
+    # vendor — require opt-in extra (pip install agentix[extra])
+    "anthropic": {"type": "model", "modality": "chat", "source": "api", "extra": "anthropic", "sdk": "anthropic", "package": ""},
+    "openai": {"type": "model", "modality": "chat", "source": "api", "extra": "openai", "sdk": "openai", "package": ""},
+    "gemini": {"type": "model", "modality": "chat", "source": "api", "extra": "openai", "sdk": "openai", "package": ""},
+    "groq": {"type": "model", "modality": "chat", "source": "api", "extra": "groq", "sdk": "groq", "package": ""},
+    "ollama": {"type": "model", "modality": "chat", "source": "local", "extra": "openai", "sdk": "openai", "package": ""},
+    "grok": {"type": "model", "modality": "chat", "source": "api", "extra": "openai", "sdk": "openai", "package": ""},
+    "nvidia": {"type": "model", "modality": "chat", "source": "api", "extra": "openai", "sdk": "openai", "package": ""},
+    "melious": {"type": "model", "modality": "chat", "source": "api", "extra": "openai", "sdk": "openai", "package": ""},
+    "openai-embedding": {"type": "model", "modality": "embedding", "source": "api", "extra": "openai", "sdk": "openai", "package": ""},
     # intrinsic — ship with kernel
-    "huble": {"type": "model", "modality": "chat", "source": "gateway", "extra": "", "sdk": ""},
-    "huble-embedding": {"type": "model", "modality": "embedding", "source": "gateway", "extra": "", "sdk": ""},
-    "hf-stt": {"type": "model", "modality": "stt", "source": "api", "extra": "hf", "sdk": "huggingface_hub"},
-    "minio-object-store": {
-        "type": "storage",
-        "modality": "object",
-        "source": "local",
-        "extra": "minio",
-        "sdk": "minio",
+    "huble": {"type": "model", "modality": "chat", "source": "gateway", "extra": "", "sdk": "", "package": ""},
+    "huble-embedding": {"type": "model", "modality": "embedding", "source": "gateway", "extra": "", "sdk": "", "package": ""},
+    "hf-stt": {"type": "model", "modality": "stt", "source": "api", "extra": "hf", "sdk": "huggingface_hub", "package": ""},
+    "minio-object-store": {"type": "storage", "modality": "object", "source": "local", "extra": "minio", "sdk": "minio", "package": ""},
+    "postgresql-relational": {"type": "storage", "modality": "relational", "source": "local", "extra": "postgresql", "sdk": "asyncpg", "package": ""},
+    "local-object-store": {"type": "storage", "modality": "object", "source": "local", "extra": "", "sdk": "", "package": ""},
+    "sqlite-relational": {"type": "storage", "modality": "relational", "source": "local", "extra": "", "sdk": "", "package": ""},
+    "local-file-store": {"type": "storage", "modality": "file", "source": "local", "extra": "", "sdk": "", "package": ""},
+    # integration — standalone packages, app-domain drivers (ERP, CRM, etc.)
+    # Install via: pip install <package>  (not an agentix extra)
+    # Register via: plugin_packages in config.yaml
+    "odoo-erp": {
+        "type": "erp", "modality": "json-rpc", "source": "api",
+        "extra": "", "sdk": "agentix_odoo_driver",
+        "package": "agentix-odoo-driver",
+        "status": "available",
     },
-    "postgresql-relational": {
-        "type": "storage",
-        "modality": "relational",
-        "source": "local",
-        "extra": "postgresql",
-        "sdk": "asyncpg",
+    "sf-crm": {
+        "type": "crm", "modality": "rest", "source": "api",
+        "extra": "", "sdk": "agentix_sf_driver",
+        "package": "agentix-sf-driver",
+        "status": "planned",
     },
-    "local-object-store": {"type": "storage", "modality": "object", "source": "local", "extra": "", "sdk": ""},
-    "sqlite-relational": {"type": "storage", "modality": "relational", "source": "local", "extra": "", "sdk": ""},
-    "local-file-store": {"type": "storage", "modality": "file", "source": "local", "extra": "", "sdk": ""},
+    "sap-erp": {
+        "type": "erp", "modality": "odata", "source": "api",
+        "extra": "", "sdk": "agentix_sap_driver",
+        "package": "agentix-sap-driver",
+        "status": "planned",
+    },
 }
 
 _VENDOR_KEYS = {k for k, v in _DRIVER_META.items() if v["extra"] in ("anthropic", "openai", "groq")}
+_INTEGRATION_KEYS = {k for k, v in _DRIVER_META.items() if v.get("package")}
 
 
 def _sdk_installed(sdk: str) -> bool:
@@ -64,6 +74,8 @@ def _sdk_installed(sdk: str) -> bool:
 
 
 def _tier(key: str) -> str:
+    if key in _INTEGRATION_KEYS:
+        return "integration"
     meta = _DRIVER_META.get(key, {})
     extra = meta.get("extra", "")
     if extra in ("anthropic", "openai", "groq"):
@@ -71,42 +83,99 @@ def _tier(key: str) -> str:
     return "intrinsic"
 
 
+def _install_label(key: str) -> str:
+    meta = _DRIVER_META.get(key, {})
+    if meta.get("package"):
+        return f"pip install {meta['package']}"
+    if meta.get("extra"):
+        return f"agentix[{meta['extra']}]"
+    return "(ships with kernel)"
+
+
 @app.command("list")
-def driver_list() -> None:
-    """List all available drivers with type, modality, and SDK status."""
-    t = make_table("Key", "Tier", "Type", "Modality", "Source", "Extra", "SDK installed")
+def driver_list(
+    active: bool = typer.Option(False, "--active", "-a", help="Show drivers configured in ~/.agentix/config.yaml"),
+    config_path: Path | None = typer.Option(None, "--config"),
+) -> None:
+    """List all available drivers with type, modality, and install status.
+
+    Without --active: shows the full catalogue (kernel + integration).
+    With --active:    shows only drivers configured in the current config file.
+    """
+    if active:
+        _driver_list_active(config_path)
+        return
+
+    t = make_table("Key", "Tier", "Type", "Modality", "Source", "Install", "Available")
     for key, meta in sorted(_DRIVER_META.items()):
         sdk = meta["sdk"]
-        installed = "[green]yes[/green]" if _sdk_installed(sdk) else "[red]no[/red]"
-        tier_label = "[yellow]vendor[/yellow]" if _tier(key) == "vendor" else "intrinsic"
-        extra_label = f"agentix[{meta['extra']}]" if meta["extra"] else "[dim]core[/dim]"
-        t.add_row(key, tier_label, meta["type"], meta["modality"], meta["source"], extra_label, installed)
+        tier = _tier(key)
+        status = meta.get("status", "available")
+
+        if tier == "integration":
+            if status == "planned":
+                avail = "[dim]planned[/dim]"
+            else:
+                avail = "[green]yes[/green]" if _sdk_installed(sdk) else "[red]not installed[/red]"
+            tier_label = "[cyan]integration[/cyan]"
+        elif tier == "vendor":
+            avail = "[green]yes[/green]" if _sdk_installed(sdk) else "[red]no[/red]"
+            tier_label = "[yellow]vendor[/yellow]"
+        else:
+            avail = "[green]yes[/green]" if _sdk_installed(sdk) else "[red]no[/red]"
+            tier_label = "intrinsic"
+
+        t.add_row(key, tier_label, meta["type"], meta["modality"], meta["source"], _install_label(key), avail)
     print_table(t)
 
 
+def _driver_list_active(config_path: Path | None) -> None:
+    """Print drivers currently configured in config.yaml."""
+    cfg = load_config(config_path)
+    if not cfg.drivers:
+        typer.echo("No drivers configured in config. Run 'agentix driver install <key>'.")
+        return
+    t = make_table("Name", "Driver key", "Type", "Modality", "Default", "Base URL")
+    for d in cfg.drivers:
+        meta = _DRIVER_META.get(d.driver, {})
+        t.add_row(
+            d.name,
+            d.driver,
+            d.type or meta.get("type", ""),
+            d.modality or meta.get("modality", ""),
+            "[green]yes[/green]" if d.default else "",
+            d.base_url or "[dim]default[/dim]",
+        )
+    print_table(t)
+    typer.echo(f"\n{len(cfg.drivers)} driver(s) in {cfg.config_path}")
+
+
 @app.command("show")
-def driver_show(key: str = typer.Argument(..., help="Driver key (e.g. anthropic, sqlite-relational)")) -> None:
+def driver_show(key: str = typer.Argument(..., help="Driver key (e.g. anthropic, odoo-erp)")) -> None:
     """Show details for a single driver."""
     if key not in _DRIVER_META:
         error(f"unknown driver key {key!r}. Run 'agentix driver list' to see all available drivers.")
         raise typer.Exit(1)
     meta = _DRIVER_META[key]
     sdk = meta["sdk"]
+    tier = _tier(key)
+    status = meta.get("status", "available")
     from agentix_cli._output import print_kv
 
-    print_kv(
-        [
-            ("Key", key),
-            ("Tier", _tier(key)),
-            ("Type", meta["type"]),
-            ("Modality", meta["modality"]),
-            ("Source", meta["source"]),
-            ("Install extra", f"pip install agentix[{meta['extra']}]" if meta["extra"] else "(ships with kernel)"),
-            ("SDK package", sdk or "(none)"),
-            ("SDK installed", "yes" if _sdk_installed(sdk) else "no"),
-        ],
-        title=f"Driver: {key}",
-    )
+    rows = [
+        ("Key", key),
+        ("Tier", tier),
+        ("Status", status),
+        ("Type", meta["type"]),
+        ("Modality", meta["modality"]),
+        ("Source", meta["source"]),
+        ("Install", _install_label(key)),
+        ("SDK / package", sdk or "(none)"),
+        ("Available", "yes" if (status == "planned" or _sdk_installed(sdk)) else "not installed"),
+    ]
+    if tier == "integration":
+        rows.append(("Config", "Add package to plugin_packages in config.yaml"))
+    print_kv(rows, title=f"Driver: {key}")
 
 
 @app.command("install")
@@ -130,17 +199,49 @@ def driver_install(
     sdk = meta["sdk"]
     cfg = load_config(config_path)
 
+    tier = _tier(key)
+    package = meta.get("package", "")
+    status = meta.get("status", "available")
+
+    if status == "planned":
+        error(f"Driver {key!r} is planned but not yet released (package {package!r} does not exist).")
+        raise typer.Exit(1)
+
     if dry_run:
         dry_run_header()
-        if extra:
+        if tier == "integration":
+            would(f"pip install {package}")
+            would(f"add {package!r} to plugin_packages in {cfg.config_path}")
+        elif extra:
             would(f"pip install agentix[{extra}]  (SDK: {sdk})")
+            would(f"add DriverSpec name={spec_name!r} driver={key!r} to {cfg.config_path}")
         else:
             would("no SDK install needed (intrinsic driver)")
-        would(f"add DriverSpec name={spec_name!r} driver={key!r} to {cfg.config_path}")
+            would(f"add DriverSpec name={spec_name!r} driver={key!r} to {cfg.config_path}")
         return
 
-    # 1. Install SDK extra if needed
-    if extra and not _sdk_installed(sdk):
+    # 1. Install package / SDK extra
+    if tier == "integration":
+        if not _sdk_installed(sdk):
+            typer.echo(f"Installing {package}...")
+            result = subprocess.run(
+                [sys.executable, "-m", "pip", "install", package],
+                capture_output=False,
+            )
+            if result.returncode != 0:
+                error(f"pip install failed (exit {result.returncode})")
+                raise typer.Exit(result.returncode)
+        else:
+            ok(f"{package!r} already installed")
+        # Integration drivers register via plugin_packages, not DriverSpec.
+        # Inform the user — the package name is the plugin module to add.
+        warn(
+            f"Add the driver's plugin module to plugin_packages in {cfg.config_path}.\n"
+            f"  Example:  plugin_packages:\\n    - {sdk}"
+        )
+        ok(f"Driver package {package!r} installed.")
+        return
+    elif extra and not _sdk_installed(sdk):
         typer.echo(f"Installing agentix[{extra}]...")
         result = subprocess.run(
             [sys.executable, "-m", "pip", "install", f"agentix[{extra}]"],
@@ -152,7 +253,7 @@ def driver_install(
     elif extra:
         ok(f"SDK {sdk!r} already installed")
 
-    # 2. Register in config
+    # 2. Register in config (kernel drivers only)
     driver_spec = CliDriverSpec(
         name=spec_name,
         driver=key,
@@ -165,7 +266,7 @@ def driver_install(
     raw = save_config(cfg, driver_to_add=driver_spec)
     write_config(raw, cfg.config_path)
     ok(f"Driver {key!r} registered as {spec_name!r} in {cfg.config_path}")
-    if _tier(key) == "vendor":
+    if tier == "vendor":
         warn("Remember to set your API key — see docs/vendor-licenses.md for ToS.")
 
 
