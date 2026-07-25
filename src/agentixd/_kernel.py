@@ -158,9 +158,13 @@ async def build_kernel(cfg: DaemonConfig) -> KernelState:
     if cfg.plugin_packages:
         import importlib
 
+        from agentix.compliance import DriverComplianceError, enforce_plugin_compliance
+
         for pkg in cfg.plugin_packages:
             try:
                 mod = importlib.import_module(f"{pkg}.plugin")
+                # Structural compliance gate — daemon refuses to start if violated.
+                enforce_plugin_compliance(mod)
                 mod.register(state, tool_registry)
                 if callable(getattr(mod, "skills_roots", None)):
                     pkg_roots = mod.skills_roots()
@@ -171,6 +175,8 @@ async def build_kernel(cfg: DaemonConfig) -> KernelState:
                         label = f"{short}-user" if is_user else short
                         root_layers[r] = label
                 log.info("plugin loaded", package=pkg)
+            except DriverComplianceError:
+                raise  # hard stop — non-compliant plugin must not be wired in
             except Exception as exc:
                 log.error("plugin load failed", package=pkg, error=str(exc))
 
