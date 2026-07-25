@@ -71,8 +71,20 @@ class MemoryPage:
     sections: dict[str, str] = field(default_factory=dict)
 
     def render(self) -> str:
-        """Reassemble the page to markdown source (round-trip stable)."""
-        post = frontmatter.Post(self.preamble + _sections_to_markdown(self.sections), **self.frontmatter)
+        """Reassemble the page to markdown source (round-trip stable).
+
+        ``frontmatter.dumps`` strips trailing whitespace from content, so a
+        preamble's closing newlines are lost after the first write. Restore the
+        blank-line separator before the first H2 heading here so that the H2
+        always starts on its own line regardless of how many times the page has
+        been round-tripped.
+        """
+        sections_md = _sections_to_markdown(self.sections)
+        if self.preamble and sections_md:
+            preamble = self.preamble.rstrip("\n") + "\n\n"
+        else:
+            preamble = self.preamble
+        post = frontmatter.Post(preamble + sections_md, **self.frontmatter)
         dumped: str = frontmatter.dumps(post)
         return dumped + "\n"
 
