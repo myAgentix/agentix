@@ -98,6 +98,18 @@ class MemoryStore:
         """The file transport underneath — exposed for registry wiring."""
         return self._driver
 
+    @property
+    def registry(self) -> "MemoryRegistry":
+        """Slug → path registry backed by ``registry.jsonl`` at the store root.
+
+        Lazy-initialised on first access.  Call ``await store.registry.load()``
+        before resolving slugs (e.g. in the driver's async factory).
+        """
+        if not hasattr(self, "_registry"):
+            from agentix.storage.registry import MemoryRegistry
+            self._registry: MemoryRegistry = MemoryRegistry(self._driver)
+        return self._registry
+
     # ───────────────────────────── path helpers ────────────────────────────
 
     def _resolve(self, relative: str | Path) -> Path:
