@@ -29,6 +29,13 @@ The kernel AST-scans the plugin's source tree before calling `register()`.
 | Memory modules via MemoryStore | `memory-raw-file-write` | error |
 | No private kernel internals imported | `private-kernel-import` | error |
 | Skills have SKILL.md | `skill-missing-markdown` | warning |
+| Plugin exposes `register(state, tool_registry)` | `plugin-register-missing` | error (if plugin.py present) / warning (if absent) |
+
+**Plugin register** — if `plugin.py` is present in the source tree, it must define
+`register(state, tool_registry)` at module level with at least 2 positional parameters.
+`agentixd/_kernel.py` calls this directly after compliance; a missing function raises
+`AttributeError` at daemon startup. If `plugin.py` is absent the check emits a warning
+only (drivers used as dependencies, not as plugin_packages, legitimately have no plugin.py).
 
 **Shadow classes** — drivers must not redefine: `Session`, `Turn`, `WorkingMemory`,
 `ToolContext`, `ToolRegistry`, `SkillCatalog`, `Dispatcher`, `KernelState`,

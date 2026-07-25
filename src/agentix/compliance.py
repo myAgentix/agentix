@@ -94,6 +94,7 @@ class DriverComplianceChecker:
             self._check_memory_raw_io(tree, rel)
             self._check_private_imports(tree, rel)
         self._check_skills_markdown()
+        self._check_plugin_register()
         return list(self._violations)
 
     def _add(
@@ -245,6 +246,58 @@ class DriverComplianceChecker:
                             severity="warning",
                         )
                     )
+
+    # ── Check 6: plugin.py must define register(state, tool_registry) ─────
+
+    def _check_plugin_register(self) -> None:
+        """Verify the plugin entry-point is present and well-formed.
+
+        If ``plugin.py`` is found: ``register(state, tool_registry)`` must be
+        defined at module level with at least 2 positional parameters — error if
+        absent (agentixd will crash with AttributeError at daemon startup).
+
+        If ``plugin.py`` is absent: warning only — a driver package (dependency,
+        not a plugin_package entry) legitimately has no plugin.py.
+        """
+        plugin_files = list(self.src_root.rglob("plugin.py"))
+        if not plugin_files:
+            self._add(
+                "plugin-register-missing",
+                "plugin.py",
+                0,
+                "no plugin.py in source tree — required when this package is listed in plugin_packages",
+                severity="warning",
+            )
+            return
+
+        for plugin_file in plugin_files:
+            rel = str(plugin_file.relative_to(self.src_root))
+            try:
+                source = plugin_file.read_text(encoding="utf-8")
+                tree = ast.parse(source, filename=str(plugin_file))
+            except SyntaxError:
+                continue
+            for node in ast.walk(tree):
+                if (
+                    isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+                    and node.name == "register"
+                    and len(node.args.args) >= 2
+                    # module-level only: parent must be the module body
+                    and any(
+                        isinstance(parent, ast.Module)
+                        for parent in ast.walk(tree)
+                        if isinstance(parent, ast.Module) and node in parent.body
+                    )
+                ):
+                    return  # compliant — found in at least one plugin.py
+            self._add(
+                "plugin-register-missing",
+                rel,
+                0,
+                "plugin.py does not define register(state, tool_registry) at module level — "
+                "agentixd will crash with AttributeError when loading this plugin",
+            )
+
 
 
 def check_driver_compliance(src_root: Path) -> list[ComplianceViolation]:

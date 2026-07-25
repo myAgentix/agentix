@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.7.1 — compliance: Check 6 plugin-register-missing
+
+- `agentix.compliance`: new Check 6 `plugin-register-missing` — if `plugin.py` is
+  present in the driver source tree, it must define `register(state, tool_registry)`
+  at module level (≥ 2 positional parameters). Error if present-but-missing; warning
+  if `plugin.py` is absent (dependency drivers legitimately have none). Previously a
+  missing `register` caused a bare `AttributeError` at daemon startup.
+- `docs/driver-compliance.md`: table updated (now six checks); rule semantics documented.
+- `docs/seam-enforcement-audit.md`: new — maps all 15 kernel↔app seams to their
+  enforcement status with rationale for design-only seams.
+
 ## 0.6.1 — Gemini + Ollama chat adapters — #93, #94
 
 - `GeminiChatDriver` (`adapters/gemini.py`, #93) and `OllamaChatDriver`
