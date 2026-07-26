@@ -45,7 +45,8 @@ Bare `| bash` (no subcommand) still defaults to `install`. After install, activa
 `AGENTIX_EXTRAS` is **appended** onto the base `daemon,cli,sdk` set, so the daemon and CLI
 are always present — e.g. `AGENTIX_EXTRAS=anthropic` adds the Anthropic SDK on top.
 
-**Extras reference:**
+**Extras reference** (the `agentix[...]` extras; the curl installer always adds `daemon,cli,sdk`
+and appends any `AGENTIX_EXTRAS` on top):
 
 | Extra | Installs | Notes |
 |-------|----------|-------|
