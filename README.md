@@ -16,23 +16,34 @@
 
 ## Install
 
-**One line — zero prior setup required:**
+**One line — zero prior setup required.** Installs the kernel **plus the `agentixd`
+daemon, `agentix` CLI and SDK** into a self-contained venv, straight from the public
+git repo (no PyPI needed — the latest tag is resolved automatically). Three subcommands:
+`install` (default) · `upgrade` · `uninstall`.
 
 ```sh
-# Kernel only (intrinsic drivers: SQLite, local-fs, huble, hf-stt)
-curl -LsSf https://raw.githubusercontent.com/myAgentix/agentix/main/scripts/install.sh | bash
+# Install (kernel + daemon + CLI + SDK; intrinsic drivers: SQLite, local-fs, hf-stt)
+curl -LsSf https://raw.githubusercontent.com/myAgentix/agentix/main/scripts/install.sh | bash -s -- install
 
-# With a specific vendor LLM (accepts Anthropic ToS — see docs/vendor-licenses.md)
-curl -LsSf https://raw.githubusercontent.com/myAgentix/agentix/main/scripts/install.sh | AGENTIX_EXTRAS=anthropic bash
+# Upgrade an existing install to the latest tag
+curl -LsSf https://raw.githubusercontent.com/myAgentix/agentix/main/scripts/install.sh | bash -s -- upgrade
 
-# Multiple vendor extras
-curl -LsSf https://raw.githubusercontent.com/myAgentix/agentix/main/scripts/install.sh | AGENTIX_EXTRAS=anthropic,openai,groq bash
+# Uninstall (keeps config.yaml + data; add --purge to delete everything)
+curl -LsSf https://raw.githubusercontent.com/myAgentix/agentix/main/scripts/install.sh | bash -s -- uninstall
 
-# Custom install directory
-curl -LsSf https://raw.githubusercontent.com/myAgentix/agentix/main/scripts/install.sh | AGENTIX_HOME=~/myproject bash
+# Add a vendor LLM extra (appended onto daemon,cli,sdk — accepts vendor ToS)
+curl -LsSf https://raw.githubusercontent.com/myAgentix/agentix/main/scripts/install.sh | AGENTIX_EXTRAS=anthropic bash -s -- install
+
+# Pin an exact version / custom install directory
+curl -LsSf .../install.sh | AGENTIX_VERSION=v0.7.1 AGENTIX_HOME=~/myproject bash -s -- install
 ```
 
-After install, activate: `source ~/.agentix/env.sh`
+Bare `| bash` (no subcommand) still defaults to `install`. After install, activate with
+`source ~/.agentix/env.sh`, then start the daemon: `agentixd` (Unix socket at
+`~/.agentix/agentixd.sock`; probe with `curl --unix-socket ~/.agentix/agentixd.sock http://x/health/live`).
+
+`AGENTIX_EXTRAS` is **appended** onto the base `daemon,cli,sdk` set, so the daemon and CLI
+are always present — e.g. `AGENTIX_EXTRAS=anthropic` adds the Anthropic SDK on top.
 
 **Extras reference:**
 
@@ -50,14 +61,7 @@ After install, activate: `source ~/.agentix/env.sh`
 | `all` | Everything | |
 
 See [docs/vendor-licenses.md](docs/vendor-licenses.md) for SDK licenses and provider ToS links.
-
-**With the CLI tools:**
-
-```sh
-curl -LsSf https://raw.githubusercontent.com/myAgentix/agentix/main/scripts/install.sh | AGENTIX_EXTRAS=cli bash
-# combined with a vendor extra:
-curl -LsSf https://raw.githubusercontent.com/myAgentix/agentix/main/scripts/install.sh | AGENTIX_EXTRAS=anthropic,cli bash
-```
+The `agentix` CLI, `agentixd` daemon and SDK are installed by default — no extra needed.
 
 **Developer install** (source checkout, Python 3.12 + [uv](https://docs.astral.sh/uv/)):
 
