@@ -97,29 +97,52 @@ You just installed the kernel, the `agentixd` daemon, the `agentix` CLI and the 
 path from zero to a running agent. The runnable 10-line first agent lives in
 [`docs/quickstart.md`](docs/quickstart.md).
 
-**1. Write a starter config**
+> **Read this first — installing does NOT start anything.** The installer only puts files
+> in `~/.agentix/venv`. Nothing runs until *you* start it, and the `agentixd`/`agentix`
+> commands aren't even on your `PATH` until you activate the environment. So a fresh
+> `ps ax | grep agentix` showing nothing is **normal** — do the two steps below.
+
+**1. Activate the environment** (once per shell — put it in your `~/.bashrc` to make it stick)
+
+```sh
+source ~/.agentix/env.sh     # adds ~/.agentix/venv/bin to PATH
+which agentixd               # should now print a path; if it prints nothing, re-source above
+```
+
+**2. Start the daemon** — pick ONE:
+
+```sh
+# a) Foreground — quickest way to see it work (Ctrl-C to stop):
+agentixd                     # binds ~/.agentix/agentixd.sock (no TCP port)
+
+# b) Background, no setup — survives your shell but not logout:
+nohup ~/.agentix/venv/bin/agentixd > ~/.agentix/agentixd.log 2>&1 &
+
+# c) Managed service (auto-restart, survives logout) — needs lingering enabled:
+loginctl enable-linger "$USER"          # needs sudo; without it the service dies at logout
+agentix daemon install                  # writes the systemd --user unit
+systemctl --user enable --now agentixd  # manage via `agentix daemon status|stop`
+```
+
+Then probe it (from any activated shell):
+
+```sh
+curl --unix-socket ~/.agentix/agentixd.sock http://x/health/live   # -> {"status":"ok",...}
+ps ax | grep agentixd                                              # now shows a live process
+```
+
+The daemon boots fine with **no config** — health, admin and scaffold routes come up, only
+*session execution* stays disabled. Do step 3 only when you want to run agent turns.
+
+**3. Enable session execution** *(optional — write a config + install an LLM driver)*
 
 ```sh
 agentix config init          # writes a commented ~/.agentix/config.yaml
-```
-
-**2. Install an LLM driver and set its key**
-
-```sh
 agentix driver install anthropic
-export ANTHROPIC_API_KEY=sk-ant-...
+export ANTHROPIC_API_KEY=sk-ant-...      # keep keys in env, not in the unit file
 agentix config validate      # checks config + driver SDK + key
+# restart the daemon so it picks up the config (Ctrl-C + rerun, or `systemctl --user restart agentixd`)
 ```
-
-**3. Start the daemon**
-
-```sh
-agentixd                     # foreground; binds ~/.agentix/agentixd.sock (no TCP port)
-# — or run it as a background service —
-agentix daemon install       # systemd --user unit; manage via `agentix daemon status|stop`
-```
-
-Probe it: `curl --unix-socket ~/.agentix/agentixd.sock http://x/health/live`.
 
 **4. Run your first turn** — talk to the daemon over the SDK (full script in
 [`docs/quickstart.md`](docs/quickstart.md)):
@@ -144,6 +167,16 @@ async with AgentixClient() as client:
 
 Full CLI reference is [below](#cli). Read-state commands (`session`, `memory`, `context`) degrade
 gracefully with a clear message when no config or daemon is present.
+
+### Troubleshooting — "install worked but nothing is running"
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| `ps ax \| grep agentix` shows nothing after install | Install never starts the daemon | Start it — Getting Started **step 2** |
+| `agentixd: command not found` / `which agentixd` is empty | Env not activated in this shell | `source ~/.agentix/env.sh` (add to `~/.bashrc`) |
+| `curl --unix-socket ... /health/live` fails / no socket file | Daemon not running | Start it — Getting Started **step 2** |
+| Service dies after you log out | User lingering disabled | `loginctl enable-linger "$USER"` |
+| Health is `ok` but session runs are refused | No config / no driver | Getting Started **step 3** |
 
 > **Installed with plain `pip install agentix` instead of the curl script?** Add the daemon extra
 > — `pip install "agentix[daemon]"` — or the CLI's `config`/`driver` writes fail on missing PyYAML.
