@@ -35,12 +35,13 @@ def checkpoint_decision_subject(session_id: str) -> str:
 class JobType(StrEnum):
     """Dispatch key (gateway -> agent). Mirror of the job-message schema."""
 
-    MIGRATE = "migrate"
-    DRY_RUN = "dry_run"
+    EXTRACT = "extract"
+    TRANSFORM = "transform"
+    LOAD = "load"
+    VERIFY = "verify"
     ESTIMATE = "estimate"
     BULK_LOAD = "bulk_load"
     ROLLBACK = "rollback"
-    VERIFY = "verify"
     PORT_MODULE = "port_module"
     TRAJECTORIES_REBUILD = "trajectories_rebuild"
     DISCOVER_ORDER = "discover_order"

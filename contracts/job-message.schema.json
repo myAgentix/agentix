@@ -11,8 +11,8 @@
       "type": "string",
       "description": "Dispatch key -> actions.* handler. Mirror of ludo-agent JobType StrEnum.",
       "enum": [
-        "migrate", "dry_run", "estimate",
-        "bulk_load", "rollback", "verify", "port_module",
+        "extract", "transform", "load", "verify",
+        "estimate", "bulk_load", "rollback", "port_module",
         "trajectories_rebuild", "discover_order", "backfill_types"
       ]
     },
