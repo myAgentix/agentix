@@ -91,10 +91,69 @@ The kernel package itself (`agentix`) installs cleanly from the source tree via
 require PyPI access; the lock file (`uv.lock`) pins their exact hashes so `uv run`
 can pull from the local cache when wheels are already present.
 
-## Quickstart
+## Getting Started
 
-The 10-line first agent is [`docs/quickstart.md`](docs/quickstart.md); below is the
-full wiring an app composes.
+You just installed the kernel, the `agentixd` daemon, the `agentix` CLI and the SDK. Here is the
+path from zero to a running agent. The runnable 10-line first agent lives in
+[`docs/quickstart.md`](docs/quickstart.md).
+
+**1. Write a starter config**
+
+```sh
+agentix config init          # writes a commented ~/.agentix/config.yaml
+```
+
+**2. Install an LLM driver and set its key**
+
+```sh
+agentix driver install anthropic
+export ANTHROPIC_API_KEY=sk-ant-...
+agentix config validate      # checks config + driver SDK + key
+```
+
+**3. Start the daemon**
+
+```sh
+agentixd                     # foreground; binds ~/.agentix/agentixd.sock (no TCP port)
+# — or run it as a background service —
+agentix daemon install       # systemd --user unit; manage via `agentix daemon status|stop`
+```
+
+Probe it: `curl --unix-socket ~/.agentix/agentixd.sock http://x/health/live`.
+
+**4. Run your first turn** — talk to the daemon over the SDK (full script in
+[`docs/quickstart.md`](docs/quickstart.md)):
+
+```python
+from agentix_sdk.client import AgentixClient
+async with AgentixClient() as client:
+    s = await client.create_session(customer_id="acme")
+    print(await client.run_turn(s.id, message="What is the capital of France?"))
+```
+
+### First CLI commands
+
+| Command | What it shows |
+|---|---|
+| `agentix version` | kernel + CLI version (no setup needed) |
+| `agentix status` | config presence, paths, driver SDK status |
+| `agentix config init` / `config validate` | write / check `~/.agentix/config.yaml` |
+| `agentix driver list` | all driver keys with tier + SDK-installed status |
+| `agentix tool list` | kernel built-in tools |
+| `agentix daemon status` | whether `agentixd` is running |
+
+Full CLI reference is [below](#cli). Read-state commands (`session`, `memory`, `context`) degrade
+gracefully with a clear message when no config or daemon is present.
+
+> **Installed with plain `pip install agentix` instead of the curl script?** Add the daemon extra
+> — `pip install "agentix[daemon]"` — or the CLI's `config`/`driver` writes fail on missing PyYAML.
+> The curl installer bundles `daemon,cli,sdk` by default, so this only bites bare-pip installs.
+
+## Embedding the kernel (advanced)
+
+Prefer the CLI + daemon above to get started. This section is for embedding the kernel
+**in-process** — you own the event loop and wire the components yourself. The 10-line first agent
+is [`docs/quickstart.md`](docs/quickstart.md); below is the full wiring an app composes.
 
 - The kernel takes a *resolved* `KernelConfig` — apps own YAML/env loading and subclass it to
   attach their own settings.

@@ -119,7 +119,7 @@ Errors surface as `AgentixError(status_code, detail)`.
 ## Direct kernel wiring (advanced)
 
 If you embed the kernel in-process rather than talking to a running daemon, wire
-the components directly — see the full example in [README § Quickstart](../README.md#quickstart).
+the components directly — see the full example in [README § Embedding the kernel (advanced)](../README.md#embedding-the-kernel-advanced).
 This path requires the `daemon` extra for `KernelConfig` + stores, and you own the
 event loop.
 

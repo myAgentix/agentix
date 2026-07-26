@@ -2,15 +2,77 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Annotated
 
 import typer
 
-from agentix_cli._config import load_config
+from agentix_cli._config import _DEFAULT_CONFIG, load_config
 from agentix_cli._output import dry_run_header, error, make_table, ok, print_kv, print_table, warn
 
 app = typer.Typer(help="Show and validate the Agentix configuration.")
+
+# Commented starter config — kept in sync with docs/quickstart.md. Written verbatim
+# (not yaml.dump) so the guiding comments survive for the operator editing it.
+_STARTER_CONFIG = """\
+# Agentix daemon configuration — see docs/quickstart.md and
+# docs/kernel-config-reference.md for every key.
+
+sqlite_path: ~/.agentix/kernel.db
+memory_path: ~/.agentix/memory
+
+budget_usd: 200.0
+
+# The default chat driver. Install its SDK with: agentix driver install anthropic
+# and export ANTHROPIC_API_KEY before starting the daemon.
+drivers:
+  - name: llm
+    driver: anthropic
+    modality: chat
+    type: model
+    default: true
+
+# Optional: override the daemon socket path (default: ~/.agentix/agentixd.sock)
+# daemon:
+#   socket_path: ~/.agentix/agentixd.sock
+
+# Optional: MinIO for blob checkpoints (omit to use the local-fs fallback)
+# minio:
+#   endpoint: 10.0.99.1:9000
+#   access_key: minioadmin
+#   secret_key: minioadmin
+#   bucket: agentix
+
+# Optional: app plugin packages registered at daemon boot
+# plugin_packages:
+#   - myapp
+"""
+
+
+@app.command("init")
+def config_init(
+    force: Annotated[bool, typer.Option("--force", "-f", help="Overwrite an existing config file")] = False,
+    config_path: Path | None = typer.Option(None, "--config"),
+) -> None:
+    """Write a starter config.yaml to get the daemon running."""
+    resolved = config_path or Path(os.environ.get("AGENTIX_CONFIG", str(_DEFAULT_CONFIG)))
+
+    if resolved.exists() and not force:
+        error(f"Config already exists: {resolved}")
+        typer.echo("Re-run with --force to overwrite it.")
+        raise typer.Exit(1)
+
+    resolved.parent.mkdir(parents=True, exist_ok=True)
+    resolved.write_text(_STARTER_CONFIG)
+
+    ok(f"Wrote starter config: {resolved}")
+    typer.echo("")
+    typer.echo("Next steps:")
+    typer.echo("  1. agentix driver install anthropic   # install the LLM SDK")
+    typer.echo("  2. export ANTHROPIC_API_KEY=...        # provider key")
+    typer.echo("  3. agentix config validate            # check it")
+    typer.echo("  4. agentixd                            # start the daemon")
 
 
 @app.command("show")
