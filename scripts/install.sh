@@ -4,7 +4,8 @@
 # Installs the agentix kernel + the agentixd daemon (fastapi/uvicorn) + CLI + SDK
 # into a self-contained venv, straight from the public git repo (no PyPI needed).
 #
-# Usage (subcommands: install | uninstall | upgrade; default is install):
+# Usage (subcommands: install | uninstall | upgrade; default is install).
+# Pipe into BASH — not zsh/sh — e.g. `| bash -s -- install`:
 #   curl -LsSf https://raw.githubusercontent.com/myAgentix/agentix/main/scripts/install.sh | bash -s -- install
 #   curl -LsSf https://raw.githubusercontent.com/myAgentix/agentix/main/scripts/install.sh | bash -s -- upgrade
 #   curl -LsSf https://raw.githubusercontent.com/myAgentix/agentix/main/scripts/install.sh | bash -s -- uninstall
@@ -45,6 +46,19 @@ for arg in "$@"; do
         *) echo "Agentix installer: unknown argument '$arg'" >&2; exit 1 ;;
     esac
 done
+
+# This script targets bash. It mostly works under zsh, but nudge users to the
+# documented invocation so shell-compat is never a variable during a stalled run.
+if [[ -z "${BASH_VERSION:-}" ]]; then
+    echo "note: agentix installer is designed for bash — prefer '| bash -s -- $CMD'" >&2
+fi
+
+# Never let ANY git operation in this installer block on an interactive prompt — a
+# credential request, or an unknown SSH host from a user's https->ssh `insteadOf`
+# rewrite. A curl|bash install has no way to answer it, so fail fast instead. Applies
+# to resolve_ref's `git ls-remote` and uv's clone alike.
+export GIT_TERMINAL_PROMPT=0
+export GIT_SSH_COMMAND="ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new"
 
 # ── OS check ─────────────────────────────────────────────────────────────────
 OS="$(uname -s)"
@@ -121,6 +135,15 @@ installed_version() {
     "$VENV/bin/python" -c "import agentix; print(agentix.__version__)" 2>/dev/null || echo "unknown"
 }
 
+# Install $SPEC from the git source. uv prints nothing while it resolves the dependency
+# tree (30-90s on first run), so announce the wait — otherwise the install looks hung.
+# git is already forced non-interactive globally (see top), so a bad credential/host
+# errors fast rather than blocking. Extra args (e.g. --upgrade) go to `uv pip install`.
+pip_install_spec() {
+    echo "Resolving + installing from git ($REF) — first run can take 30-90s, please wait..."
+    uv pip install --python "$VENV/bin/python" "$@" "$SPEC"
+}
+
 write_env_snippets() {
     ENV_SH="$AGENTIX_HOME/env.sh"
     cat > "$ENV_SH" <<EOF
@@ -158,7 +181,8 @@ do_install() {
     resolve_ref
 
     uv venv "$VENV" --python "$PYTHON"
-    uv pip install --python "$VENV/bin/python" "$SPEC"
+    echo "venv ready — installing packages..."
+    pip_install_spec
     write_env_snippets
 
     echo ""
@@ -187,7 +211,7 @@ do_upgrade() {
     OLD=$(installed_version)
     stop_daemon
     echo "Upgrading agentix in $VENV ..."
-    uv pip install --python "$VENV/bin/python" --upgrade "$SPEC"
+    pip_install_spec --upgrade
     write_env_snippets
     echo ""
     echo "Agentix upgraded: $OLD -> $(installed_version)  (ref: $REF)"
