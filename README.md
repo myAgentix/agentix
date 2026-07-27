@@ -36,7 +36,17 @@ curl -LsSf https://raw.githubusercontent.com/myAgentix/agentix/main/scripts/inst
 
 # Pin an exact version / custom install directory
 curl -LsSf .../install.sh | AGENTIX_VERSION=v0.7.1 AGENTIX_HOME=~/myproject bash -s -- install
+
+# Install from a PRIVATE repo over SSH (no PyPI; needs an SSH key that can reach it)
+curl -LsSf .../install.sh | AGENTIX_REPO=git@github.com:myAgentix/agentix.git bash -s -- install
 ```
+
+**Distribution is git, not PyPI.** The kernel is installed straight from the git repo
+(`uv pip install "git+…@<tag>"`) — nothing is published to PyPI while licensing is
+undecided. Set `AGENTIX_REPO` to an SSH remote (`git@github.com:owner/repo.git`, scp-style
+or `ssh://…`) to install from a private repo; the installer normalises it to a
+`git+ssh://` spec and relies on your SSH key (it never prompts for credentials). The same
+model applies to integration drivers — see [Non-intrinsic drivers](#non-intrinsic-drivers).
 
 Bare `| bash` (no subcommand) still defaults to `install`. After install, activate with
 `source ~/.agentix/env.sh`, then start the daemon: `agentixd` (Unix socket at
@@ -250,10 +260,13 @@ agentix --help
 agentix version                               kernel + CLI version
 agentix status                                health: config, drivers, paths
 
-agentix driver list                           all 17 driver keys with tier, SDK status
+agentix driver list                           all driver keys with tier, SDK status
 agentix driver show <key>                     details for one driver
-agentix driver install <key> [--dry-run]      pip-installs SDK extra + registers in config
-agentix driver uninstall <name> [--dry-run]   removes DriverSpec from config
+agentix driver install <key> [--dry-run]      vendor/intrinsic: SDK extra + DriverSpec;
+                                              integration: git+ssh install + enable plugin
+agentix driver uninstall <name> [--dry-run]   removes DriverSpec and/or plugin from config
+agentix driver load <key> [--dry-run]         enable a non-intrinsic driver (plugin_packages)
+agentix driver unload <key> [--dry-run]       disable a non-intrinsic driver
 
 agentix session list [--limit N]              recent sessions from SQLite
 agentix session status <session-id>           single session: turns, spend, timestamps
@@ -281,6 +294,31 @@ agentix config validate [--dry-run]           check driver specs + SDK installs
 All mutating commands accept `--dry-run` / `-n` to preview changes without applying them.
 
 Config file: `~/.agentix/config.yaml` (override with `AGENTIX_CONFIG` env var or `--config`).
+
+### Non-intrinsic drivers
+
+Integration drivers (ERP/CRM adapters like `odoo-erp`) are **standalone packages**, not
+kernel extras. They are distributed from **private git over SSH** (not PyPI) and are
+enabled through `plugin_packages:` in `config.yaml` — the daemon imports each entry's
+`<module>.plugin.register(...)` at boot. Their lifecycle is separate from vendor/intrinsic
+drivers:
+
+```sh
+# One shot: install from git+ssh AND enable the plugin
+agentix driver install odoo-erp          # uv pip install "git+ssh://…" + writes plugin_packages
+
+# Or split the two concerns:
+uv pip install "git+ssh://git@github.com/myAgentix/agentix-driver-odoo.git@<tag>"
+agentix driver load odoo-erp             # enable  (adds agentix_odoo_driver to plugin_packages)
+agentix driver unload odoo-erp           # disable (removes it; package stays installed)
+
+agentix driver show odoo-erp             # shows the SSH repo + the exact load/unload commands
+```
+
+`load`/`unload` only edit config — **restart the daemon** to apply
+(`systemctl --user restart agentixd`, or Ctrl-C + `agentixd`). Programmers author a driver
+as a package exposing `<pkg>.plugin:register` that passes `enforce_plugin_compliance`; see
+[`docs/plugins.md`](docs/plugins.md).
 
 ## Core concepts
 

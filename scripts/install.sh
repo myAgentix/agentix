@@ -21,11 +21,15 @@
 #                     (anthropic,openai,groq,minio,hf,postgresql,broker,all)
 #   AGENTIX_VERSION — pinned tag, e.g. v0.7.1 (default: latest semver tag)
 #   AGENTIX_REF     — arbitrary git ref (branch/sha); overrides AGENTIX_VERSION
+#   AGENTIX_REPO    — git remote to install from. Default is public HTTPS. For a PRIVATE
+#                     repo use SSH (needs an SSH key that can reach it), e.g.
+#                       AGENTIX_REPO=git@github.com:myAgentix/agentix.git
+#                     Accepts scp-style (git@host:owner/repo.git) or a full ssh://…/https URL.
 #   AGENTIX_PURGE   — uninstall only: 1 = also delete config.yaml + data (whole home)
 
 set -euo pipefail
 
-REPO_URL="https://github.com/myAgentix/agentix.git"
+REPO_URL="${AGENTIX_REPO:-https://github.com/myAgentix/agentix.git}"
 AGENTIX_HOME="${AGENTIX_HOME:-$HOME/.agentix}"
 AGENTIX_EXTRAS="${AGENTIX_EXTRAS:-}"
 AGENTIX_VERSION="${AGENTIX_VERSION:-}"
@@ -109,6 +113,17 @@ ensure_uv() {
     fi
 }
 
+# ── normalise REPO_URL into a pip/uv `git+…` URL ──────────────────────────────
+# `git ls-remote` accepts scp-style (git@host:owner/repo.git), but pip/uv need a real
+# URL: git+ssh://git@host/owner/repo.git. Convert the scp colon to a path slash.
+pip_git_url() {
+    local url="$REPO_URL"
+    if [[ "$url" == git@* ]]; then
+        url="ssh://${url/:/\/}"           # git@host:owner/repo.git -> ssh://git@host/owner/repo.git
+    fi
+    printf 'git+%s' "$url"
+}
+
 # ── resolve the git ref to install ────────────────────────────────────────────
 # Precedence: AGENTIX_REF (any ref) > AGENTIX_VERSION (exact tag) > latest tag.
 resolve_ref() {
@@ -128,7 +143,7 @@ resolve_ref() {
     fi
     EXTRAS="$BASE_EXTRAS"
     [[ -n "$AGENTIX_EXTRAS" ]] && EXTRAS="${BASE_EXTRAS},${AGENTIX_EXTRAS}"
-    SPEC="agentix[${EXTRAS}] @ git+${REPO_URL}@${REF}"
+    SPEC="agentix[${EXTRAS}] @ $(pip_git_url)@${REF}"
 }
 
 installed_version() {
