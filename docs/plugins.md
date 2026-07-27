@@ -99,6 +99,20 @@ plugin_packages:
 The package must be installed in the same venv as `agentixd`. Order matters when
 multiple plugins contribute skill roots — first plugin's roots take priority.
 
+Operators don't hand-edit this list. Use the CLI, which resolves a driver key (e.g.
+`odoo-erp`) to its plugin module and edits `plugin_packages` idempotently:
+
+```sh
+agentix driver load <key>     # enable  — adds the module to plugin_packages
+agentix driver unload <key>   # disable — removes it (package stays installed)
+```
+
+Loading is **boot-time**: the daemon imports `plugin_packages` once at startup, so
+`load`/`unload` take effect on the next restart (`systemctl --user restart agentixd`).
+There is no hot reload for plugins — a plugin injects tools, middleware and a per-session
+engine factory, so live add/drop is deliberately out of scope (kernel-phase concern).
+Tracked for later in [#152](https://github.com/myAgentix/agentix/issues/152).
+
 ---
 
 ## Writing a plugin — minimal example

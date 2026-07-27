@@ -91,9 +91,19 @@ def load_config(path: Path | None = None) -> CliConfig:
 
 
 def save_config(
-    cfg: CliConfig, *, driver_to_add: CliDriverSpec | None = None, driver_name_to_remove: str | None = None
+    cfg: CliConfig,
+    *,
+    driver_to_add: CliDriverSpec | None = None,
+    driver_name_to_remove: str | None = None,
+    plugin_to_add: str | None = None,
+    plugin_to_remove: str | None = None,
 ) -> dict[str, Any]:
-    """Return updated raw config dict (caller writes to disk)."""
+    """Return updated raw config dict (caller writes to disk).
+
+    ``plugin_to_add`` / ``plugin_to_remove`` manage the ``plugin_packages`` list — the
+    importable module names the daemon loads at boot (``<pkg>.plugin.register``).
+    Non-intrinsic (integration) drivers are enabled/disabled here, not via DriverSpec.
+    """
     try:
         import yaml  # type: ignore[import-untyped]
     except ImportError:
@@ -126,6 +136,16 @@ def save_config(
 
     if driver_name_to_remove is not None:
         raw["drivers"] = [d for d in raw.get("drivers", []) if d.get("name") != driver_name_to_remove]
+
+    if plugin_to_add is not None:
+        # Idempotent: keep order, never duplicate an already-enabled plugin module.
+        plugins = list(raw.get("plugin_packages", []))
+        if plugin_to_add not in plugins:
+            plugins.append(plugin_to_add)
+        raw["plugin_packages"] = plugins
+
+    if plugin_to_remove is not None:
+        raw["plugin_packages"] = [p for p in raw.get("plugin_packages", []) if p != plugin_to_remove]
 
     return raw
 
