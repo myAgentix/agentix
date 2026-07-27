@@ -126,7 +126,7 @@ which agentixd               # should now print a path; if it prints nothing, re
 agentixd                     # binds ~/.agentix/agentixd.sock (no TCP port)
 
 # b) Background, no setup — survives your shell but not logout:
-nohup ~/.agentix/venv/bin/agentixd > ~/.agentix/agentixd.log 2>&1 &
+nohup ~/.agentix/venv/bin/agentixd &   # logs auto-written to ~/.agentix/agentixd.log
 
 # c) Managed service (auto-restart, survives logout) — needs lingering enabled:
 loginctl enable-linger "$USER"          # needs sudo; without it the service dies at logout
@@ -137,8 +137,9 @@ systemctl --user enable --now agentixd  # manage via `agentix daemon status|stop
 Then probe it (from any activated shell):
 
 ```sh
-curl --unix-socket ~/.agentix/agentixd.sock http://x/health/live   # -> {"status":"ok",...}
-ps ax | grep agentixd                                              # now shows a live process
+agentixd --status                                                  # health table + kernel state
+agentixd --log                                                     # last 50 lines of ~/.agentix/agentixd.log
+curl --unix-socket ~/.agentix/agentixd.sock http://x/health/live   # raw JSON if preferred
 ```
 
 The daemon boots fine with **no config** — health, admin and scaffold routes come up, only
@@ -168,12 +169,13 @@ async with AgentixClient() as client:
 
 | Command | What it shows |
 |---|---|
+| `agentixd --status` | daemon health + kernel state |
+| `agentixd --log [N]` | last N lines of `~/.agentix/agentixd.log` (default 50) |
 | `agentix version` | kernel + CLI version (no setup needed) |
 | `agentix status` | config presence, paths, driver SDK status |
 | `agentix config init` / `config validate` | write / check `~/.agentix/config.yaml` |
 | `agentix driver list` | all driver keys with tier + SDK-installed status |
 | `agentix tool list` | kernel built-in tools |
-| `agentix daemon status` | whether `agentixd` is running |
 
 Full CLI reference is [below](#cli). Read-state commands (`session`, `memory`, `context`) degrade
 gracefully with a clear message when no config or daemon is present.
@@ -184,7 +186,7 @@ gracefully with a clear message when no config or daemon is present.
 |---|---|---|
 | `ps ax \| grep agentix` shows nothing after install | Install never starts the daemon | Start it — Getting Started **step 2** |
 | `agentixd: command not found` / `which agentixd` is empty | Env not activated in this shell | `source ~/.agentix/env.sh` (add to `~/.bashrc`) |
-| `curl --unix-socket ... /health/live` fails / no socket file | Daemon not running | Start it — Getting Started **step 2** |
+| `agentixd --status` / `curl ... /health/live` fails | Daemon not running | Start it — Getting Started **step 2** |
 | Service dies after you log out | User lingering disabled | `loginctl enable-linger "$USER"` |
 | Health is `ok` but session runs are refused | No config / no driver | Getting Started **step 3** |
 
