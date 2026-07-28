@@ -22,22 +22,6 @@ from agentix.storage import MinioConfig
 
 
 @dataclass(frozen=True)
-class AnthropicConfig:
-    """Per-provider config for AnthropicProvider.
-
-    ``keychain_service`` names the macOS Keychain entry Claude Code writes on
-    login (default ``Claude Code-credentials``); when set, re-read per-request
-    so rotations land on the next call. ``oauth_credentials_path`` is the
-    file-path fallback for non-macOS setups.
-    """
-
-    oauth_credentials_path: Path | None = None
-    keychain_service: str | None = None
-    api_key: str | None = None
-    model: str | None = None
-
-
-@dataclass(frozen=True)
 class HubleConfig:
     """HUBLE gateway config.
 
@@ -76,7 +60,7 @@ class LlmPricingConfig:
 
     Keys match the provider-returned model id. Missing models fall through to
     ``FALLBACK_PRICING['__unknown__']`` (over-counts). Date-stamped ids
-    (``claude-sonnet-4-6-20260101`` → ``claude-sonnet-4-6``) are prefix-matched
+    (``some-model-4-6-20260101`` → ``some-model-4-6``) are prefix-matched
     by ``cost_tracking._lookup_pricing``.
     """
 
@@ -94,9 +78,9 @@ class DriverSpec:
     """One declared driver instance (the ``drivers:`` config block).
 
     ``driver`` selects HOW to build: a builtin factory key registered via
-    ``agentix.drivers.factory.register_driver_factory`` (``"anthropic"``,
-    ``"huble"``, ``"melious"``, ``"openai-embedding"``, ``"huble-embedding"``,
-    ``"hf-stt"``, …) or a dotted path ``"pkg.mod:Class"`` for
+    ``agentix.drivers.factory.register_driver_factory`` (``"huble"``,
+    ``"melious"``, ``"gemini"``, ``"openai-compat-embedding"``,
+    ``"huble-embedding"``, ``"hf-stt"``, …) or a dotted path ``"pkg.mod:Class"`` for
     developer-supplied driver classes (seam #13).
 
     ``api_key_env`` names the ENVIRONMENT VARIABLE holding the credential —
@@ -135,7 +119,6 @@ class KernelConfig:
     minio: MinioConfig
     sqlite_path: Path
     memory_path: Path
-    anthropic: AnthropicConfig = AnthropicConfig()
     huble: HubleConfig = HubleConfig()
     melious: MeliousConfig = MeliousConfig()
     budget_usd: float = 200.0
@@ -156,49 +139,37 @@ class KernelConfig:
 # (e.g. ludo-agent's config report) previously mirrored these predicates and
 # drifted independently. They now share one code path.
 
-ProviderConfig = AnthropicConfig | HubleConfig | MeliousConfig
+ProviderConfig = HubleConfig | MeliousConfig
 
 # Failover priority when several providers are active: direct Melious first
-# (no gateway hop), then HUBLE, then Anthropic.
-_PROVIDER_PRIORITY = ("melious", "huble", "anthropic")
-
-
-def anthropic_active(ac: AnthropicConfig) -> bool:
-    """Anthropic counts as active only when it carries usable credentials.
-
-    Unlike Melious/HUBLE (a plain ``enabled`` flag), Anthropic activation is
-    the compound "any credential present" predicate — the one most prone to
-    drift between copies, so it lives here.
-    """
-    return bool(ac.api_key or ac.oauth_credentials_path or ac.keychain_service)
+# (no gateway hop), then HUBLE.
+_PROVIDER_PRIORITY = ("melious", "huble")
 
 
 def enabled_providers(cfg: KernelConfig) -> list[tuple[str, ProviderConfig]]:
     """Ordered ``(name, provider_config)`` for every active provider.
 
     Order is failover priority (:data:`_PROVIDER_PRIORITY`). Empty when
-    nothing is configured — callers apply the Anthropic last-resort default.
+    nothing is configured — callers apply the Melious last-resort default.
     """
     active: list[tuple[str, ProviderConfig]] = []
     if cfg.melious.enabled:
         active.append(("melious", cfg.melious))
     if cfg.huble.enabled:
         active.append(("huble", cfg.huble))
-    if anthropic_active(cfg.anthropic):
-        active.append(("anthropic", cfg.anthropic))
     return active
 
 
 def select_enabled_provider(cfg: KernelConfig) -> tuple[str, ProviderConfig]:
     """Return the primary active provider (first by priority).
 
-    Falls back to ``("anthropic", cfg.anthropic)`` when nothing is
-    configured — matching the runtime's last-resort Anthropic default.
+    Falls back to ``("melious", cfg.melious)`` when nothing is configured —
+    matching the runtime's last-resort default.
     """
     active = enabled_providers(cfg)
     if active:
         return active[0]
-    return ("anthropic", cfg.anthropic)
+    return ("melious", cfg.melious)
 
 
 def derive_driver_specs(cfg: KernelConfig) -> tuple[DriverSpec, ...]:
@@ -207,7 +178,7 @@ def derive_driver_specs(cfg: KernelConfig) -> tuple[DriverSpec, ...]:
     The bridge that keeps operators' existing YAML working: when
     ``cfg.drivers`` is empty, ``build_drivers`` calls this to derive the
     chat chain (via :func:`enabled_providers` — activation SSoT unchanged)
-    and the embedding backend from the anthropic/huble/melious blocks.
+    and the embedding backend from the huble/melious blocks.
     Chat order = failover priority; the first chat spec is the default.
     """
     specs: list[DriverSpec] = []
@@ -222,8 +193,8 @@ def derive_driver_specs(cfg: KernelConfig) -> tuple[DriverSpec, ...]:
             )
         )
     if not specs:
-        # Last-resort Anthropic — matches select_enabled_provider().
-        specs.append(DriverSpec(name="anthropic", driver="anthropic", modality="chat", default=True))
+        # Last-resort Melious — matches select_enabled_provider().
+        specs.append(DriverSpec(name="melious", driver="melious", modality="chat", default=True))
     if cfg.huble.enabled and cfg.huble.embedding_model and cfg.huble.api_key and cfg.huble.base_url:
         specs.append(
             DriverSpec(
@@ -235,16 +206,8 @@ def derive_driver_specs(cfg: KernelConfig) -> tuple[DriverSpec, ...]:
                 default=True,
             )
         )
-    else:
-        # OPENAI_API_KEY fallback is resolved at build time (env may be
-        # absent — the factory skips the spec instead of failing).
-        specs.append(
-            DriverSpec(
-                name="openai-embedding",
-                driver="openai-embedding",
-                modality="embedding",
-                api_key_env="OPENAI_API_KEY",
-                default=True,
-            )
-        )
+    # No embedding fallback: the kernel ships no ambient-credential embedding
+    # backend. Declare one explicitly in ``drivers:`` (e.g. driver
+    # ``openai-compat-embedding`` with base_url + api_key_env) when needed —
+    # callers read ``registry.embedding_or_none()``.
     return tuple(specs)

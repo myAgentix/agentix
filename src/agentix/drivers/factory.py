@@ -76,36 +76,14 @@ def _env_key(spec: DriverSpec) -> str | None:
 # ── builtin factories (lazy adapter imports — keep import-time cheap) ──
 
 
-# ── vendor factories (ImportError → clear install hint) ───────────────────────
-
-
-def _build_anthropic(spec: DriverSpec, cfg: KernelConfig) -> Driver:
-    try:
-        from agentix.drivers.adapters.vendor.anthropic import AnthropicChatDriver
-    except ImportError as exc:
-        raise RuntimeError("Install agentix[anthropic] to use the Anthropic driver") from exc
-    pc = cfg.anthropic
-    return AnthropicChatDriver(
-        api_key=_env_key(spec) or pc.api_key,
-        oauth_credentials_path=pc.oauth_credentials_path,
-        keychain_service=pc.keychain_service,
-        model=spec.model or pc.model,
-    )
-
-
-def _build_openai(spec: DriverSpec, cfg: KernelConfig) -> Driver:
-    try:
-        from agentix.drivers.adapters.vendor.openai import OpenAIChatDriver
-    except ImportError as exc:
-        raise RuntimeError("Install agentix[openai] to use the OpenAI driver") from exc
-    return OpenAIChatDriver(api_key=_env_key(spec), model=spec.model, base_url=spec.base_url or None)
+# ── OpenAI-compatible-wire factories (ImportError → clear install hint) ───────
 
 
 def _build_gemini(spec: DriverSpec, cfg: KernelConfig) -> Driver:
     try:
         from agentix.drivers.adapters.vendor.gemini import GeminiChatDriver
     except ImportError as exc:
-        raise RuntimeError("Install agentix[openai] to use the Gemini driver") from exc
+        raise RuntimeError("Install agentix[openai-compat] to use the Gemini driver") from exc
     return GeminiChatDriver(api_key=_env_key(spec), model=spec.model, base_url=spec.base_url or None)
 
 
@@ -113,31 +91,15 @@ def _build_ollama(spec: DriverSpec, cfg: KernelConfig) -> Driver:
     try:
         from agentix.drivers.adapters.vendor.ollama import OllamaChatDriver
     except ImportError as exc:
-        raise RuntimeError("Install agentix[openai] to use the Ollama driver") from exc
+        raise RuntimeError("Install agentix[openai-compat] to use the Ollama driver") from exc
     return OllamaChatDriver(api_key=_env_key(spec), model=spec.model, base_url=spec.base_url or None)
-
-
-def _build_groq(spec: DriverSpec, cfg: KernelConfig) -> Driver:
-    try:
-        from agentix.drivers.adapters.vendor.groq import GroqChatDriver
-    except ImportError as exc:
-        raise RuntimeError("Install agentix[groq] to use the Groq driver") from exc
-    return GroqChatDriver(api_key=_env_key(spec), model=spec.model)
-
-
-def _build_grok(spec: DriverSpec, cfg: KernelConfig) -> Driver:
-    try:
-        from agentix.drivers.adapters.vendor.grok import GrokChatDriver
-    except ImportError as exc:
-        raise RuntimeError("Install agentix[openai] to use the Grok (xAI) driver") from exc
-    return GrokChatDriver(api_key=_env_key(spec), model=spec.model, base_url=spec.base_url or None)
 
 
 def _build_nvidia(spec: DriverSpec, cfg: KernelConfig) -> Driver:
     try:
         from agentix.drivers.adapters.vendor.nvidia import NvidiaChatDriver
     except ImportError as exc:
-        raise RuntimeError("Install agentix[openai] to use the NVIDIA NIM driver") from exc
+        raise RuntimeError("Install agentix[openai-compat] to use the NVIDIA NIM driver") from exc
     return NvidiaChatDriver(api_key=_env_key(spec), model=spec.model, base_url=spec.base_url or None)
 
 
@@ -145,7 +107,7 @@ def _build_melious(spec: DriverSpec, cfg: KernelConfig) -> Driver:
     try:
         from agentix.drivers.adapters.vendor.melious import MeliousChatDriver
     except ImportError as exc:
-        raise RuntimeError("Install agentix[openai] to use the Melious driver") from exc
+        raise RuntimeError("Install agentix[openai-compat] to use the Melious driver") from exc
     pc = cfg.melious
     return MeliousChatDriver(
         base_url=spec.base_url or pc.base_url or os.environ.get("MELIOUS_BASE_URL"),
@@ -169,11 +131,11 @@ def _build_huble(spec: DriverSpec, cfg: KernelConfig) -> Driver:
     )
 
 
-def _build_openai_embedding(spec: DriverSpec, cfg: KernelConfig) -> Driver:
+def _build_openai_compat_embedding(spec: DriverSpec, cfg: KernelConfig) -> Driver:
     try:
         from agentix.drivers.embedding import OpenAIEmbeddingDriver
     except ImportError as exc:
-        raise RuntimeError("Install agentix[openai] to use OpenAI embeddings") from exc
+        raise RuntimeError("Install agentix[openai-compat] to use OpenAI-compatible embeddings") from exc
     kwargs: dict[str, str] = {}
     if spec.model:
         kwargs["model"] = spec.model
@@ -235,15 +197,11 @@ def _build_huble_embedding(spec: DriverSpec, cfg: KernelConfig) -> Driver:
 
 for _key, _factory in (
     # vendor — require opt-in extra; consumer accepts provider ToS
-    ("anthropic", _build_anthropic),
-    ("openai", _build_openai),
     ("gemini", _build_gemini),
-    ("groq", _build_groq),
     ("ollama", _build_ollama),
-    ("grok", _build_grok),
     ("nvidia", _build_nvidia),
     ("melious", _build_melious),
-    ("openai-embedding", _build_openai_embedding),
+    ("openai-compat-embedding", _build_openai_compat_embedding),
     # intrinsic — ship with kernel, open-source deps only
     ("huble", _build_huble),
     ("huble-embedding", _build_huble_embedding),
@@ -329,8 +287,7 @@ def build_drivers(
       :class:`ChatFailoverChain` in spec order; ``always_chain=True``
       forces the chain wrapper. Each chat driver is wrapped in
       :class:`CostRecordingChatDriver` when ``sqlite`` is passed.
-    * ``model_override`` swaps the melious/huble model per build; the
-      anthropic fallback model deliberately stays as configured.
+    * ``model_override`` swaps the melious/huble model per build.
     * embedding specs need ``sqlite`` (the cache store); a spec whose
       backend is unconfigured (``EmbeddingError``) is skipped — callers
       read ``registry.embedding_or_none()``.

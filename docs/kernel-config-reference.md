@@ -13,15 +13,14 @@ at driver-construction time, mostly as fallbacks when the corresponding
 | `MELIOUS_API_KEY` | `drivers/factory.py` | Melious key when `melious.api_key` is unset. |
 | `LLMHUB_URL` | `drivers/adapters/huble.py` | HUBLE gateway URL fallback (`huble.base_url`). |
 | `LLMHUB_API_KEY` | `drivers/adapters/huble.py` | HUBLE key fallback (`huble.api_key`). |
-| `GROQ_API_KEY` | `drivers/adapters/groq.py` | Groq chat key. |
-| `OPENAI_API_KEY` | `drivers/factory.py`, `drivers/embedding.py` | Enables the OpenAI embedding fallback when HUBLE embeddings aren't configured. |
+| `GEMINI_API_KEY` / `GOOGLE_API_KEY` | `drivers/adapters/vendor/gemini.py` | Gemini chat key (compat endpoint). |
+| `NVIDIA_API_KEY` | `drivers/adapters/vendor/nvidia.py` | NVIDIA NIM chat key. |
 | `HF_TOKEN` | `drivers/adapters/hf.py` | HuggingFace Inference API token (stt driver) when no `api_key`/`api_key_env` is declared. |
-| `AGENTIX_ANTHROPIC_BILLING_HEADER` | `drivers/adapters/anthropic.py` | Overrides the OAuth billing header. (The legacy branded alias was removed in agentix 0.3.) |
-| `CLAUDE_CODE_OAUTH_TOKEN` | `drivers/adapters/anthropic_auth.py` | Anthropic OAuth token source (1st). |
-| `ANTHROPIC_AUTH_TOKEN` | `drivers/adapters/anthropic_auth.py` | Anthropic OAuth token source (2nd). |
-| `ANTHROPIC_API_KEY` | `drivers/adapters/anthropic_auth.py` | Anthropic API-key token source (3rd; typical for CI). |
 
-Chat **activation** (which of Melious/HUBLE/Anthropic is live, and in what failover
+The kernel reads no ambient credential for a first-party commercial provider — it
+ships none. Out-of-tree drivers (seam #13) declare their own `api_key_env`.
+
+Chat **activation** (which of Melious/HUBLE is live, and in what failover
 order) is decided in one place — `agentix.config.enabled_providers` /
 `select_enabled_provider`, which also feeds `derive_driver_specs`. Both the driver
 factory and app config loaders consume it, so the "which backend is active"
@@ -34,7 +33,7 @@ predicate can't drift.
 | Field | Meaning |
 |---|---|
 | `name` | Registry instance name (unique). |
-| `driver` | Builtin factory key (`anthropic`, `huble`, `melious`, `openai-embedding`, `huble-embedding`, `hf-stt`, `minio-object-store`, `sqlite-relational`, `local-file-store`) or a dotted path `pkg.mod:Class` (seam #13, [`drivers.md`](drivers.md) §6). |
+| `driver` | Builtin factory key (`melious`, `huble`, `gemini`, `ollama`, `nvidia`, `openai-compat-embedding`, `huble-embedding`, `hf-stt`, `minio-object-store`, `sqlite-relational`, `local-file-store`) or a dotted path `pkg.mod:Class` (seam #13, [`drivers.md`](drivers.md) §6). |
 | `type` / `modality` | `model` + chat\|embedding\|stt today; open vocabulary for future types (`database`, …). |
 | `model`, `base_url` | Instance settings; adapter defaults apply when unset. |
 | `api_key_env` | **The env-var NAME holding the credential — never the secret itself** (12-factor). |
@@ -42,7 +41,7 @@ predicate can't drift.
 | `options` | Adapter-specific passthrough (hashable key/value pairs). |
 
 **Empty `drivers:` is valid and the default**: `derive_driver_specs` maps the legacy
-`anthropic:` / `huble:` / `melious:` blocks onto specs, so existing operator YAML
+`huble:` / `melious:` blocks onto specs, so existing operator YAML
 keeps working unchanged. The `drivers:` block is the canonical form going forward;
 collapsing the legacy provider blocks into it is the **v0.6 config migration**.
 

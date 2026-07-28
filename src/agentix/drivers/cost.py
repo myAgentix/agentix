@@ -143,7 +143,7 @@ class CostRecordingChatDriver:
         #      exactly for any driver that reports it.
         #   2. compute_cost_usd() — locally-derived estimate using
         #      FALLBACK_PRICING. Used when the upstream doesn't return
-        #      a cost (anthropic / openai direct) OR for models
+        #      a cost (most direct provider APIs) OR for models
         #      not yet in the pricing table (estimate via __unknown__
         #      fallback — known under-/over-counting; flagged for
         #      operator awareness in FALLBACK_PRICING).
@@ -200,7 +200,7 @@ def _extract_real_cost(response: ChatResponse) -> float | None:
     None otherwise (so the caller falls back to local computation).
 
     HUBLE writes ``raw["cost_usd"]`` on every response. Other drivers
-    (anthropic / openai direct) don't, so this returns None and the
+    (most direct provider APIs) don't, so this returns None and the
     caller uses compute_cost_usd. Conservative on type: rejects 0,
     negatives, NaN, and non-numeric so a malformed upstream payload
     can't suppress local-fallback accounting.

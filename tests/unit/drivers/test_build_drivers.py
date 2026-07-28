@@ -9,7 +9,6 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from agentix.config import (
-    AnthropicConfig,
     DriverSpec,
     HubleConfig,
     KernelConfig,
@@ -52,9 +51,14 @@ class _FakeHuble:
         pass
 
 
-class _FakeAnthropic(_FakeHuble):
-    name = "anthropic"
-    default_model = "claude-haiku-4-5"
+class _FakeMelious(_FakeHuble):
+    name = "melious"
+    default_model = "deepseek-v4-flash"
+
+
+class _FakeGemini(_FakeHuble):
+    name = "gemini"
+    default_model = "gemini-2.0-flash"
 
 
 # ── derive parity with enabled_providers ──────────────────────────
@@ -64,16 +68,20 @@ def test_derive_specs_chat_matches_enabled_providers_order() -> None:
     cfg = _cfg(
         melious=MeliousConfig(enabled=True),
         huble=HubleConfig(enabled=True),
-        anthropic=AnthropicConfig(api_key="sk-ant-x"),
     )
     chat = [s for s in derive_driver_specs(cfg) if s.modality == "chat"]
     assert [s.name for s in chat] == [name for name, _ in enabled_providers(cfg)]
     assert chat[0].default is True
 
 
-def test_derive_specs_last_resort_anthropic() -> None:
+def test_derive_specs_last_resort_melious() -> None:
     chat = [s for s in derive_driver_specs(_cfg()) if s.modality == "chat"]
-    assert [s.name for s in chat] == ["anthropic"]
+    assert [s.name for s in chat] == ["melious"]
+
+
+def test_derive_specs_emit_no_ambient_embedding_fallback() -> None:
+    """0.8: the kernel ships no ambient-credential embedding backend."""
+    assert [s for s in derive_driver_specs(_cfg()) if s.modality == "embedding"] == []
 
 
 # ── chat composition ──────────────────────────────────────────────
@@ -98,16 +106,17 @@ def test_always_chain_wraps_single_driver() -> None:
 def test_multiple_chat_specs_compose_a_chain_in_priority_order() -> None:
     cfg = _cfg(
         huble=HubleConfig(enabled=True, base_url="https://h.example", api_key="k"),
-        anthropic=AnthropicConfig(api_key="sk-ant-x"),
+        melious=MeliousConfig(enabled=True, base_url="https://m.example", api_key="k"),
     )
     with (
         patch("agentix.drivers.adapters.intrinsic.huble.HubleChatDriver", _FakeHuble),
-        patch("agentix.drivers.adapters.vendor.anthropic.AnthropicChatDriver", _FakeAnthropic),
+        patch("agentix.drivers.adapters.vendor.melious.MeliousChatDriver", _FakeMelious),
     ):
         registry = build_drivers(cfg)
     chain = registry.chat()
     assert isinstance(chain, ChatFailoverChain)
-    assert [p.name for p in chain.providers] == ["huble", "anthropic"]
+    # Priority order: direct Melious first (no gateway hop), then HUBLE.
+    assert [p.name for p in chain.providers] == ["melious", "huble"]
 
 
 def test_sqlite_wraps_chat_drivers_in_cost_recorder() -> None:
@@ -117,31 +126,35 @@ def test_sqlite_wraps_chat_drivers_in_cost_recorder() -> None:
     assert isinstance(registry.chat(), CostRecordingChatDriver)
 
 
-def test_model_override_reaches_huble_not_anthropic() -> None:
+def test_model_override_reaches_huble_not_other_drivers() -> None:
+    """``model_override`` is scoped to the melious/huble specs only."""
     cfg = _cfg(
         huble=HubleConfig(enabled=True, base_url="https://h.example", api_key="k", model="glm-4.7"),
-        anthropic=AnthropicConfig(api_key="sk-ant-x", model="claude-haiku-4-5"),
+        drivers=(
+            DriverSpec(name="huble", driver="huble", modality="chat", default=True),
+            DriverSpec(name="gemini", driver="gemini", modality="chat", model="gemini-2.0-flash"),
+        ),
     )
     huble_kwargs: dict[str, Any] = {}
-    anthro_kwargs: dict[str, Any] = {}
+    gemini_kwargs: dict[str, Any] = {}
 
     class _CapturingHuble(_FakeHuble):
         def __init__(self, **kwargs: Any) -> None:
             super().__init__(**kwargs)
             huble_kwargs.update(kwargs)
 
-    class _CapturingAnthropic(_FakeAnthropic):
+    class _CapturingGemini(_FakeGemini):
         def __init__(self, **kwargs: Any) -> None:
             super().__init__(**kwargs)
-            anthro_kwargs.update(kwargs)
+            gemini_kwargs.update(kwargs)
 
     with (
         patch("agentix.drivers.adapters.intrinsic.huble.HubleChatDriver", _CapturingHuble),
-        patch("agentix.drivers.adapters.vendor.anthropic.AnthropicChatDriver", _CapturingAnthropic),
+        patch("agentix.drivers.adapters.vendor.gemini.GeminiChatDriver", _CapturingGemini),
     ):
         build_drivers(cfg, model_override="hermes-4-405b")
     assert huble_kwargs["model"] == "hermes-4-405b"
-    assert anthro_kwargs["model"] == "claude-haiku-4-5"
+    assert gemini_kwargs["model"] == "gemini-2.0-flash"
 
 
 # ── declared specs + extension seam ───────────────────────────────
@@ -169,23 +182,23 @@ def test_registered_factory_builds_declared_spec() -> None:
 
     register_driver_factory("test-ticker", lambda spec, cfg: _TickerDriver(), override=True)
     cfg = _cfg(
-        anthropic=AnthropicConfig(api_key="sk-ant-x"),
+        melious=MeliousConfig(enabled=True, base_url="https://m.example", api_key="k"),
         drivers=(
-            DriverSpec(name="anthropic", driver="anthropic", modality="chat", default=True),
+            DriverSpec(name="melious", driver="melious", modality="chat", default=True),
             DriverSpec(name="ticker", driver="test-ticker", type="timeseries-feed", modality="other"),
         ),
     )
-    with patch("agentix.drivers.adapters.vendor.anthropic.AnthropicChatDriver", _FakeAnthropic):
+    with patch("agentix.drivers.adapters.vendor.melious.MeliousChatDriver", _FakeMelious):
         registry = build_drivers(cfg)
     assert registry.get("ticker").descriptor.type == "timeseries-feed"
-    assert registry.chat().name == "anthropic"
+    assert registry.chat().name == "melious"
 
 
 def test_dotted_path_driver_construction() -> None:
     cfg = _cfg(
-        anthropic=AnthropicConfig(api_key="sk-ant-x"),
+        melious=MeliousConfig(enabled=True, base_url="https://m.example", api_key="k"),
         drivers=(
-            DriverSpec(name="anthropic", driver="anthropic", modality="chat", default=True),
+            DriverSpec(name="melious", driver="melious", modality="chat", default=True),
             DriverSpec(
                 name="dotted",
                 driver="tests.unit.drivers.fake_dotted_driver:FakeDottedDriver",
@@ -196,7 +209,7 @@ def test_dotted_path_driver_construction() -> None:
         ),
     )
     with (
-        patch("agentix.drivers.adapters.vendor.anthropic.AnthropicChatDriver", _FakeAnthropic),
+        patch("agentix.drivers.adapters.vendor.melious.MeliousChatDriver", _FakeMelious),
         patch.dict("os.environ", {"AGENTIX_TEST_DOTTED_KEY": "s3cr3t"}),
     ):
         registry = build_drivers(cfg)

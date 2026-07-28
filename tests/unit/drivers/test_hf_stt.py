@@ -161,7 +161,7 @@ def test_declared_spec_lands_in_registry_as_stt() -> None:
     from pathlib import Path
     from unittest.mock import patch
 
-    from agentix.config import AnthropicConfig, DriverSpec, KernelConfig
+    from agentix.config import DriverSpec, KernelConfig, MeliousConfig
     from agentix.drivers.factory import build_drivers
     from agentix.storage import MinioConfig
 
@@ -170,9 +170,9 @@ def test_declared_spec_lands_in_registry_as_stt() -> None:
         minio=MinioConfig(endpoint="localhost:0", access_key="x", secret_key="x"),
         sqlite_path=Path("/tmp/db.sqlite"),
         memory_path=Path("/tmp/memory"),
-        anthropic=AnthropicConfig(api_key="sk-ant-x"),
+        melious=MeliousConfig(enabled=True, base_url="https://m.example", api_key="k"),
         drivers=(
-            DriverSpec(name="anthropic", driver="anthropic", modality="chat", default=True),
+            DriverSpec(name="melious", driver="melious", modality="chat", default=True),
             DriverSpec(
                 name="hf-stt",
                 driver="hf-stt",
@@ -184,13 +184,13 @@ def test_declared_spec_lands_in_registry_as_stt() -> None:
         ),
     )
 
-    class _FakeAnthropic:
-        name = "anthropic"
-        default_model = "claude-haiku-4-5"
+    class _FakeMelious:
+        name = "melious"
+        default_model = "deepseek-v4-flash"
 
         from agentix.drivers.base import DriverDescriptor as _DD
 
-        descriptor = _DD(name="anthropic", type="model", modality="chat")
+        descriptor = _DD(name="melious", type="model", modality="chat")
 
         def __init__(self, **kwargs: Any) -> None:
             pass
@@ -202,7 +202,7 @@ def test_declared_spec_lands_in_registry_as_stt() -> None:
             pass
 
     with (
-        patch("agentix.drivers.adapters.vendor.anthropic.AnthropicChatDriver", _FakeAnthropic),
+        patch("agentix.drivers.adapters.vendor.melious.MeliousChatDriver", _FakeMelious),
         patch.dict("os.environ", {"AGENTIX_TEST_HF_TOKEN": "hf-x"}),
     ):
         registry = build_drivers(cfg)

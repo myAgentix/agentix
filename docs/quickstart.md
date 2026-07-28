@@ -3,7 +3,7 @@
 ## Install
 
 ```sh
-curl -LsSf https://raw.githubusercontent.com/myAgentix/agentix/main/scripts/install.sh | AGENTIX_EXTRAS=anthropic,daemon,sdk bash
+curl -LsSf https://raw.githubusercontent.com/myAgentix/agentix/main/scripts/install.sh | AGENTIX_EXTRAS=openai-compat,daemon,sdk bash
 source ~/.agentix/env.sh
 ```
 
@@ -26,7 +26,7 @@ budget_usd: 200.0
 
 drivers:
   - name: llm
-    driver: anthropic
+    driver: melious
     modality: chat
     type: model
     default: true
@@ -47,7 +47,9 @@ drivers:
 #   - myapp
 ```
 
-Set `ANTHROPIC_API_KEY` in your environment before starting the daemon.
+Set `MELIOUS_API_KEY` and `MELIOUS_BASE_URL` in your environment before starting the
+daemon. For a provider the kernel does not ship, point `driver:` at your own driver's
+dotted path (`pkg.mod:Class`) — see [`docs/drivers.md`](drivers.md) §6.
 
 Config key reference: [`docs/kernel-config-reference.md`](kernel-config-reference.md).
 

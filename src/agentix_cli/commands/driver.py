@@ -14,44 +14,52 @@ from agentix_cli._output import dry_run_header, error, make_table, ok, print_tab
 
 app = typer.Typer(help="Manage drivers (list, show, install, uninstall, load, unload).")
 
+#: The single opt-in extra for adapters speaking the OpenAI-compatible wire.
+_WIRE_EXTRA = "openai-compat"
+
 # ── driver metadata catalogue ──────────────────────────────────────────────
 
 _DRIVER_META: dict[str, dict[str, str]] = {
-    # vendor — require opt-in extra (pip install agentix[extra])
-    "anthropic": {
+    # openai-compat wire — require the opt-in extra (pip install agentix[openai-compat]).
+    # The OpenAI SDK is used purely as the HTTP client for that wire format;
+    # first-party commercial providers are NOT shipped (supply them via seam #13).
+    "gemini": {
         "type": "model",
         "modality": "chat",
         "source": "api",
-        "extra": "anthropic",
-        "sdk": "anthropic",
+        "extra": "openai-compat",
+        "sdk": "openai",
         "package": "",
     },
-    "openai": {"type": "model", "modality": "chat", "source": "api", "extra": "openai", "sdk": "openai", "package": ""},
-    "gemini": {"type": "model", "modality": "chat", "source": "api", "extra": "openai", "sdk": "openai", "package": ""},
-    "groq": {"type": "model", "modality": "chat", "source": "api", "extra": "groq", "sdk": "groq", "package": ""},
     "ollama": {
         "type": "model",
         "modality": "chat",
         "source": "local",
-        "extra": "openai",
+        "extra": "openai-compat",
         "sdk": "openai",
         "package": "",
     },
-    "grok": {"type": "model", "modality": "chat", "source": "api", "extra": "openai", "sdk": "openai", "package": ""},
-    "nvidia": {"type": "model", "modality": "chat", "source": "api", "extra": "openai", "sdk": "openai", "package": ""},
+    "nvidia": {
+        "type": "model",
+        "modality": "chat",
+        "source": "api",
+        "extra": "openai-compat",
+        "sdk": "openai",
+        "package": "",
+    },
     "melious": {
         "type": "model",
         "modality": "chat",
         "source": "api",
-        "extra": "openai",
+        "extra": "openai-compat",
         "sdk": "openai",
         "package": "",
     },
-    "openai-embedding": {
+    "openai-compat-embedding": {
         "type": "model",
         "modality": "embedding",
         "source": "api",
-        "extra": "openai",
+        "extra": "openai-compat",
         "sdk": "openai",
         "package": "",
     },
@@ -149,7 +157,7 @@ _DRIVER_META: dict[str, dict[str, str]] = {
     },
 }
 
-_VENDOR_KEYS = {k for k, v in _DRIVER_META.items() if v["extra"] in ("anthropic", "openai", "groq")}
+_VENDOR_KEYS = {k for k, v in _DRIVER_META.items() if v["extra"] == _WIRE_EXTRA}
 _INTEGRATION_KEYS = {k for k, v in _DRIVER_META.items() if v.get("package")}
 
 
@@ -168,7 +176,7 @@ def _tier(key: str) -> str:
         return "integration"
     meta = _DRIVER_META.get(key, {})
     extra = meta.get("extra", "")
-    if extra in ("anthropic", "openai", "groq"):
+    if extra == _WIRE_EXTRA:
         return "vendor"
     return "intrinsic"
 
@@ -290,7 +298,7 @@ def _driver_list_active(config_path: Path | None) -> None:
 
 
 @app.command("show")
-def driver_show(key: str = typer.Argument(..., help="Driver key (e.g. anthropic, odoo-erp)")) -> None:
+def driver_show(key: str = typer.Argument(..., help="Driver key (e.g. melious, odoo-erp)")) -> None:
     """Show details for a single driver."""
     if key not in _DRIVER_META:
         error(f"unknown driver key {key!r}. Run 'agentix driver list' to see all available drivers.")
@@ -322,7 +330,7 @@ def driver_show(key: str = typer.Argument(..., help="Driver key (e.g. anthropic,
 
 @app.command("install")
 def driver_install(
-    key: str = typer.Argument(..., help="Driver key to install (e.g. anthropic)"),
+    key: str = typer.Argument(..., help="Driver key to install (e.g. melious)"),
     name: str = typer.Option("", help="DriverSpec name in config (defaults to driver key)"),
     model: str | None = typer.Option(None, help="Default model for this driver"),
     api_key_env: str | None = typer.Option(None, help="Env var holding the API key"),

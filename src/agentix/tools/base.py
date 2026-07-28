@@ -125,7 +125,7 @@ class Tool(Protocol):
     # Optional provider gate. ``None`` (the protocol default — most tools
     # don't set it) means always registrable. A value declares that the
     # tool needs an LLM provider: the sentinel ``"llm"`` matches when *any*
-    # provider is configured, a concrete provider name (e.g. ``"anthropic"``)
+    # provider is configured, a concrete provider name (e.g. ``"melious"``)
     # matches only that one. ``ToolRegistry.register_provider_gated`` skips +
     # logs tools whose requirement is unmet — replacing ad-hoc
     # ``if provider is not None`` registration conditionals in apps.

@@ -22,11 +22,11 @@ minio      = ["minio>=7.2"]
 hf         = ["huggingface_hub>=0.24"]
 postgresql = ["asyncpg>=0.29"]
 
-# Vendor extras (commercial AI APIs — consumer accepts provider ToS independently)
-# See docs/vendor-licenses.md for ToS links and SDK license details.
-anthropic  = ["anthropic>=0.40"]
-openai     = ["openai>=1.55"]
-groq       = ["groq>=0.13"]
+# OpenAI-compatible wire (gemini, ollama, nvidia, melious). The `openai` SDK is
+# pulled in purely as the HTTP client for that wire format — the kernel ships no
+# first-party commercial provider driver. See docs/vendor-licenses.md for the
+# endpoint ToS each consumer accepts independently.
+openai-compat = ["openai>=1.55"]
 
 # CLI operational tooling
 cli = ["typer>=0.12", "rich>=13", "aiosqlite>=0.20"]
@@ -38,8 +38,7 @@ sdk    = ["httpx>=0.27"]
 # Convenience bundles
 broker        = ["nats-py>=2.6"]
 all-intrinsic = ["agentix[minio,hf,postgresql]"]
-all-vendors   = ["agentix[anthropic,openai,groq]"]
-all           = ["agentix[all-intrinsic,all-vendors,broker,cli,daemon,sdk]"]
+all           = ["agentix[all-intrinsic,openai-compat,broker,cli,daemon,sdk]"]
 
 [project.scripts]
 agentix  = "agentix_cli.main:app"

@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import os
 
-from agentix.drivers.adapters.vendor.openai import OpenAIChatDriver
+from agentix.drivers.adapters.vendor.openai_compat import OpenAIChatDriver
 from agentix.drivers.base import DriverDescriptor, DriverInvalidRequest
 
 __all__ = ["MeliousChatDriver"]

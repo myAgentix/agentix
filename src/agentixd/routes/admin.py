@@ -22,16 +22,21 @@ router = APIRouter(prefix="/admin", tags=["admin"])
 
 # ── Driver metadata (mirrors CLI catalogue) ───────────────────────────────────
 
+#: The single opt-in extra for adapters speaking the OpenAI-compatible wire.
+_WIRE_EXTRA = "openai-compat"
+
 _DRIVER_META: dict[str, dict[str, str]] = {
-    "anthropic": {"type": "model", "modality": "chat", "source": "api", "extra": "anthropic", "sdk": "anthropic"},
-    "openai": {"type": "model", "modality": "chat", "source": "api", "extra": "openai", "sdk": "openai"},
-    "gemini": {"type": "model", "modality": "chat", "source": "api", "extra": "openai", "sdk": "openai"},
-    "groq": {"type": "model", "modality": "chat", "source": "api", "extra": "groq", "sdk": "groq"},
-    "ollama": {"type": "model", "modality": "chat", "source": "local", "extra": "openai", "sdk": "openai"},
-    "grok": {"type": "model", "modality": "chat", "source": "api", "extra": "openai", "sdk": "openai"},
-    "nvidia": {"type": "model", "modality": "chat", "source": "api", "extra": "openai", "sdk": "openai"},
-    "melious": {"type": "model", "modality": "chat", "source": "api", "extra": "openai", "sdk": "openai"},
-    "openai-embedding": {"type": "model", "modality": "embedding", "source": "api", "extra": "openai", "sdk": "openai"},
+    "gemini": {"type": "model", "modality": "chat", "source": "api", "extra": _WIRE_EXTRA, "sdk": "openai"},
+    "ollama": {"type": "model", "modality": "chat", "source": "local", "extra": _WIRE_EXTRA, "sdk": "openai"},
+    "nvidia": {"type": "model", "modality": "chat", "source": "api", "extra": _WIRE_EXTRA, "sdk": "openai"},
+    "melious": {"type": "model", "modality": "chat", "source": "api", "extra": _WIRE_EXTRA, "sdk": "openai"},
+    "openai-compat-embedding": {
+        "type": "model",
+        "modality": "embedding",
+        "source": "api",
+        "extra": _WIRE_EXTRA,
+        "sdk": "openai",
+    },
     "huble": {"type": "model", "modality": "chat", "source": "gateway", "extra": "", "sdk": ""},
     "huble-embedding": {"type": "model", "modality": "embedding", "source": "gateway", "extra": "", "sdk": ""},
     "hf-stt": {"type": "model", "modality": "stt", "source": "api", "extra": "hf", "sdk": "huggingface_hub"},
@@ -67,7 +72,7 @@ def _sdk_installed(sdk: str) -> bool:
 
 def _tier(key: str) -> str:
     meta = _DRIVER_META.get(key, {})
-    return "vendor" if meta.get("extra") in ("anthropic", "openai", "groq") else "intrinsic"
+    return "vendor" if meta.get("extra") == _WIRE_EXTRA else "intrinsic"
 
 
 def _driver_info(key: str) -> dict[str, Any]:

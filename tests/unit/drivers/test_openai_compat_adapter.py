@@ -1,38 +1,42 @@
-"""Unit tests for OpenAI + Groq message conversion."""
+"""Unit tests for the OpenAI-compatible chat wire base.
+
+The base carries no provider identity (0.8): every one of ``api_key``,
+``base_url`` and ``model`` must be supplied, and there is no ambient env
+fallback for any of them.
+"""
 
 from __future__ import annotations
 
 import pytest
 
 from agentix.core.types import Message, ToolCall
-from agentix.drivers.adapters.vendor.anthropic import AnthropicChatDriver
-from agentix.drivers.adapters.vendor.groq import GroqChatDriver
-from agentix.drivers.adapters.vendor.openai import OpenAIChatDriver, _to_openai
+from agentix.drivers.adapters.vendor.openai_compat import OpenAIChatDriver, _to_openai
 from agentix.drivers.base import DriverInvalidRequest
 
-
-def test_openai_init_requires_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-    with pytest.raises(DriverInvalidRequest, match="no OpenAI API key"):
-        OpenAIChatDriver()
+_KW = {"api_key": "k", "base_url": "https://host/v1", "model": "m-1"}
 
 
-def test_openai_init_with_explicit_key() -> None:
-    provider = OpenAIChatDriver(api_key="sk-test")
-    assert provider.name == "openai"
-    assert provider.default_model == "gpt-5"
+def test_init_requires_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    """No ambient OPENAI_API_KEY fallback — the env var must not be consulted."""
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-ambient")
+    with pytest.raises(DriverInvalidRequest, match="no API key"):
+        OpenAIChatDriver(base_url="https://host/v1", model="m-1")
 
 
-def test_groq_init_requires_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("GROQ_API_KEY", raising=False)
-    with pytest.raises(DriverInvalidRequest, match="no Groq API key"):
-        GroqChatDriver()
+def test_init_requires_base_url() -> None:
+    with pytest.raises(DriverInvalidRequest, match="no base_url"):
+        OpenAIChatDriver(api_key="k", model="m-1")
 
 
-def test_groq_init_with_explicit_key() -> None:
-    provider = GroqChatDriver(api_key="gsk-test")
-    assert provider.name == "groq"
-    assert provider.default_model == "moonshotai/kimi-k2"
+def test_init_requires_model() -> None:
+    with pytest.raises(DriverInvalidRequest, match="no model"):
+        OpenAIChatDriver(api_key="k", base_url="https://host/v1")
+
+
+def test_init_with_all_three() -> None:
+    driver = OpenAIChatDriver(**_KW)  # type: ignore[arg-type]
+    assert driver.name == "openai-compat"
+    assert driver.default_model == "m-1"
 
 
 # ─────────────────────── message translation ──────────────────────────────
@@ -71,13 +75,7 @@ def test_to_openai_serialises_tool_call_arguments_to_json_string() -> None:
     assert json.loads(args) == {"model": "res.partner", "batch_size": 50}
 
 
-# Anthropic import is re-exported to keep the package cohesive; this tiny
-# assertion catches import regressions.
-def test_anthropic_class_exposed() -> None:
-    assert AnthropicChatDriver.name == "anthropic"
-
-
-# ──────────────────────── OpenAI tool round-trip (PR-P2) ────────────
+# ─────────────────── wire tool round-trip (PR-P2) ───────────────────
 
 
 class _FakeFn:
@@ -153,7 +151,7 @@ async def test_openai_sends_tools_with_function_wrapper(
     """PR-P2: ChatRequest.tools → ``[{"type":"function","function":...}]``."""
     from agentix.drivers.chat import ChatRequest, ToolSpec
 
-    provider = OpenAIChatDriver(api_key="sk-test")
+    provider = OpenAIChatDriver(**_KW)  # type: ignore[arg-type]
     fake = _FakeOpenAIClient(_FakeCompletion(_FakeChoice(_FakeMessage("hi"))))
     monkeypatch.setattr(provider, "_client", fake)
 
@@ -185,7 +183,7 @@ async def test_openai_parses_tool_calls_from_response(
 
     from agentix.drivers.chat import ChatRequest
 
-    provider = OpenAIChatDriver(api_key="sk-test")
+    provider = OpenAIChatDriver(**_KW)  # type: ignore[arg-type]
     tc = _FakeToolCall(
         id="call_1",
         name="extract_from_odoo",
@@ -213,7 +211,7 @@ async def test_openai_malformed_tool_arguments_surface_visibly(
     re-prompt with the actual error."""
     from agentix.drivers.chat import ChatRequest
 
-    provider = OpenAIChatDriver(api_key="sk-test")
+    provider = OpenAIChatDriver(**_KW)  # type: ignore[arg-type]
     tc = _FakeToolCall(id="call_x", name="extract_from_odoo", arguments="{malformed:")
     msg = _FakeMessage(content=None, tool_calls=[tc])
     fake = _FakeOpenAIClient(_FakeCompletion(_FakeChoice(msg, finish_reason="tool_calls")))
@@ -221,61 +219,3 @@ async def test_openai_malformed_tool_arguments_surface_visibly(
 
     resp = await provider.complete(ChatRequest(messages=[Message(role="user", content="go")]))
     assert resp.tool_calls[0].arguments == {"_malformed": "{malformed:"}
-
-
-# ──────────────────────── Groq tool round-trip (PR-P2) ──────────────
-
-
-class _FakeGroqChatClient:
-    def __init__(self, response: _FakeCompletion) -> None:
-        self.completions = _FakeCompletionsClient(response)
-
-
-class _FakeGroqClient:
-    def __init__(self, response: _FakeCompletion) -> None:
-        self.chat = _FakeGroqChatClient(response)
-
-    async def close(self) -> None:
-        return None
-
-
-@pytest.mark.asyncio
-async def test_groq_sends_tools_via_openai_compatible_format(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    from agentix.drivers.chat import ChatRequest, ToolSpec
-
-    provider = GroqChatDriver(api_key="gsk-test")
-    fake = _FakeGroqClient(_FakeCompletion(_FakeChoice(_FakeMessage("hi"))))
-    monkeypatch.setattr(provider, "_client", fake)
-
-    await provider.complete(
-        ChatRequest(
-            messages=[Message(role="user", content="go")],
-            tools=[ToolSpec(name="t", description="", input_schema={"type": "object"})],
-            tool_choice="auto",
-        )
-    )
-    sent = fake.chat.completions.kwargs.get("tools")
-    assert isinstance(sent, list) and sent[0]["type"] == "function"
-    assert fake.chat.completions.kwargs["tool_choice"] == "auto"
-
-
-@pytest.mark.asyncio
-async def test_groq_parses_tool_calls_from_response(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    import json
-
-    from agentix.drivers.chat import ChatRequest
-
-    provider = GroqChatDriver(api_key="gsk-test")
-    tc = _FakeToolCall(id="call_g", name="inspect_model", arguments=json.dumps({"model": "res.partner"}))
-    msg = _FakeMessage(content=None, tool_calls=[tc])
-    fake = _FakeGroqClient(_FakeCompletion(_FakeChoice(msg, finish_reason="tool_calls")))
-    monkeypatch.setattr(provider, "_client", fake)
-
-    resp = await provider.complete(ChatRequest(messages=[Message(role="user", content="go")]))
-    assert len(resp.tool_calls) == 1
-    assert resp.tool_calls[0].name == "inspect_model"
-    assert resp.tool_calls[0].arguments == {"model": "res.partner"}

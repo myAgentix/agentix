@@ -11,14 +11,14 @@
 #   curl -LsSf https://raw.githubusercontent.com/myAgentix/agentix/main/scripts/install.sh | bash -s -- uninstall
 #
 #   # add vendor/intrinsic extras onto the base daemon,cli,sdk set:
-#   curl -LsSf https://raw.githubusercontent.com/myAgentix/agentix/main/scripts/install.sh | AGENTIX_EXTRAS=anthropic,openai bash -s -- install
+#   curl -LsSf https://raw.githubusercontent.com/myAgentix/agentix/main/scripts/install.sh | AGENTIX_EXTRAS=openai-compat bash -s -- install
 #   # pin an exact version / install a custom home:
 #   curl -LsSf .../install.sh | AGENTIX_VERSION=v0.7.1 AGENTIX_HOME=~/myproject bash -s -- install
 #
 # Environment variables:
 #   AGENTIX_HOME    — install root (default: ~/.agentix)
 #   AGENTIX_EXTRAS  — comma-separated extras appended to daemon,cli,sdk
-#                     (anthropic,openai,groq,minio,hf,postgresql,broker,all)
+#                     (openai-compat,minio,hf,postgresql,broker,all)
 #   AGENTIX_VERSION — pinned tag, e.g. v0.7.1 (default: latest semver tag)
 #   AGENTIX_REF     — arbitrary git ref (branch/sha); overrides AGENTIX_VERSION
 #   AGENTIX_REPO    — git remote to install from. Default is public HTTPS. For a PRIVATE
@@ -38,7 +38,7 @@ AGENTIX_PURGE="${AGENTIX_PURGE:-}"
 VENV="$AGENTIX_HOME/venv"
 
 # Base extras that make agentixd (the daemon) actually runnable. User extras are
-# appended so `AGENTIX_EXTRAS=anthropic` adds the SDK without dropping the daemon.
+# appended so `AGENTIX_EXTRAS=openai-compat` adds the SDK without dropping the daemon.
 BASE_EXTRAS="daemon,cli,sdk"
 
 # ── parse subcommand + flags ─────────────────────────────────────────────────

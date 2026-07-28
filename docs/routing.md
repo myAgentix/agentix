@@ -30,7 +30,7 @@ One static route, decided at build time:
   `ChatFailoverChain` in spec order; `always_chain=True` forces the chain wrapper so
   callers needing the chain surface (e.g. `set_failover_callback`) never
   isinstance-branch. `model_override` swaps the Melious/HUBLE model per build; the
-  Anthropic fallback model deliberately stays as configured.
+  Other drivers keep their configured model.
 - **Cost recording** — when `sqlite` is passed to `build_drivers`, each chat driver is
   wrapped in `CostRecordingChatDriver` before entering the chain; spend is recorded
   against `response.model` per call ([`budgets.md`](budgets.md) §3).

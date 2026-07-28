@@ -1,9 +1,19 @@
-"""OpenAI provider — fallback adapter using the official SDK."""
+"""OpenAI-compatible chat-completions base — a wire format, not a provider.
+
+The ``/v1/chat/completions`` shape is a de-facto industry standard: Gemini,
+Ollama, NVIDIA NIM and Melious all serve it, so they subclass this driver and
+supply only their endpoint, credential and default model. Tool serialisation,
+response parsing and error classification live here once.
+
+This module deliberately carries no provider identity: there is no default
+model, no default endpoint and no ambient API-key env var. Subclasses (or the
+dotted-path seam, ``DriverSpec(driver="pkg.mod:Class")``) must pass all three.
+The ``openai`` PyPI package is used purely as the HTTP client for that wire.
+"""
 
 from __future__ import annotations
 
 import json
-import os
 from typing import Any
 
 import openai
@@ -20,13 +30,11 @@ from agentix.drivers.chat import ChatRequest, ChatResponse
 
 log = structlog.get_logger(__name__)
 
-_DEFAULT_MODEL = "gpt-5"
-
 
 class OpenAIChatDriver:
-    """OpenAI chat completions via ``openai`` SDK."""
+    """Chat completions over the OpenAI-compatible wire, via the ``openai`` SDK."""
 
-    name = "openai"
+    name = "openai-compat"
     # Subclasses set this to False when the upstream model rejects the
     # temperature param (e.g. some reasoning or flash models).
     _temperature_supported: bool = True
@@ -51,19 +59,24 @@ class OpenAIChatDriver:
         timeout_seconds: float = 300.0,
         base_url: str | None = None,
     ) -> None:
-        key = api_key or os.environ.get("OPENAI_API_KEY")
-        if not key:
+        # No ambient fallbacks: the wire base has no provider identity, so the
+        # credential, endpoint and model are all the subclass's to supply.
+        if not api_key:
+            raise DriverInvalidRequest("no API key (pass api_key)", driver=self.name)
+        if not base_url:
             raise DriverInvalidRequest(
-                "no OpenAI API key (set OPENAI_API_KEY or pass api_key)",
+                "no base_url (pass the OpenAI-compatible endpoint, e.g. https://host/v1)",
                 driver=self.name,
             )
-        self.default_model = model or _DEFAULT_MODEL
+        if not model:
+            raise DriverInvalidRequest("no model (pass model)", driver=self.name)
+        self.default_model = model
         self._client = openai.AsyncOpenAI(
-            api_key=key,
+            api_key=api_key,
             timeout=timeout_seconds,
             base_url=base_url,
         )
-        log.info("openai.provider_ready", default_model=self.default_model)
+        log.info("openai_compat.driver_ready", driver=self.name, default_model=self.default_model)
 
     async def complete(self, request: ChatRequest) -> ChatResponse:
         model = request.model or self.default_model

@@ -24,11 +24,16 @@ memory_path: ~/.agentix/memory
 
 budget_usd: 200.0
 
-# The default chat driver. Install its SDK with: agentix driver install anthropic
-# and export ANTHROPIC_API_KEY before starting the daemon.
+# The default chat driver. Install its SDK with: agentix driver install melious
+# and export MELIOUS_API_KEY + MELIOUS_BASE_URL before starting the daemon.
+#
+# The kernel ships adapters for the OpenAI-compatible wire (melious, gemini,
+# ollama, nvidia) only. For a first-party commercial provider, supply your own
+# driver via seam #13 and point `driver:` at its dotted path, e.g.
+#   driver: my_pkg.drivers:MyChatDriver
 drivers:
   - name: llm
-    driver: anthropic
+    driver: melious
     modality: chat
     type: model
     default: true
@@ -69,10 +74,10 @@ def config_init(
     ok(f"Wrote starter config: {resolved}")
     typer.echo("")
     typer.echo("Next steps:")
-    typer.echo("  1. agentix driver install anthropic   # install the LLM SDK")
-    typer.echo("  2. export ANTHROPIC_API_KEY=...        # provider key")
+    typer.echo("  1. agentix driver install melious     # install the LLM SDK")
+    typer.echo("  2. export MELIOUS_API_KEY=...         # provider key")
     typer.echo("  3. agentix config validate            # check it")
-    typer.echo("  4. agentixd                            # start the daemon")
+    typer.echo("  4. agentixd                           # start the daemon")
 
 
 @app.command("show")

@@ -53,23 +53,29 @@ error taxonomy with zero kernel change — modularity is the expandability mecha
 - Adapters use vendor SDKs **directly** (a locked decision — no translation-layer
   dependency): each translates `ChatRequest` into its vendor-specific shape and back.
 
-### Vendor adapters
+### Shipped chat adapters
+
+**The kernel ships no first-party commercial provider driver.** Anthropic, OpenAI,
+Groq and Grok were removed in 0.6 — they are ordinary out-of-tree drivers now, supplied
+through seam #13 (§6). What ships is the **OpenAI-compatible wire** and the adapters
+that speak it, because that wire is a de-facto industry standard rather than one
+vendor's API.
 
 | Driver class | Factory key | Source | Notes |
 |---|---|---|---|
-| `AnthropicChatDriver` | `"anthropic"` | `api` | API-key + OAuth token sources; tokens re-read per-request (§2.1); capabilities: `tools`, `thinking`, `cache_control` |
-| `OpenAIChatDriver` | `"openai"` | `api` | Official `openai` SDK; tool-use + `reasoning_effort` |
-| `GroqChatDriver` | `"groq"` | `api` | Official `groq` SDK; OpenAI-compatible shape; default model `moonshotai/kimi-k2` |
-| `GeminiChatDriver` | `"gemini"` | `api` | Subclasses `OpenAIChatDriver`; Google's `.../v1beta/openai/` compat endpoint; key from `GEMINI_API_KEY`/`GOOGLE_API_KEY`; `tool_choice="any"` → `"required"` may be rejected, use `"auto"` |
-| `OllamaChatDriver` | `"ollama"` | `local` | Subclasses `OpenAIChatDriver`; host's `<url>/v1`; `base_url` required; auth ignored; first local-SLM adapter for the OT direction ([`sync.md`](sync.md) §2) |
-| `GrokChatDriver` | `"grok"` | `api` | Subclasses `OpenAIChatDriver`; xAI endpoint; `base_url` or `GROK_*` env |
-| `NvidiaChatDriver` | `"nvidia"` | `api` | Subclasses `OpenAIChatDriver`; NVIDIA NIM endpoint |
-| `MeliousChatDriver` | `"melious"` | `api` | Vendor gateway; configured via `KernelConfig.melious` block + `MELIOUS_*` env |
+| `OpenAIChatDriver` | — (base class) | `api` | `adapters/vendor/openai_compat.py`; the `/v1/chat/completions` wire. No provider identity: `api_key`, `base_url` and `model` are all required. Not registered as a factory key — subclass it or point a `DriverSpec` dotted path at it |
+| `MeliousChatDriver` | `"melious"` | `api` | Default chat driver; configured via `KernelConfig.melious` block + `MELIOUS_*` env |
+| `GeminiChatDriver` | `"gemini"` | `api` | Google's `.../v1beta/openai/` compat endpoint; key from `GEMINI_API_KEY`/`GOOGLE_API_KEY`; `tool_choice="any"` → `"required"` may be rejected, use `"auto"` |
+| `OllamaChatDriver` | `"ollama"` | `local` | Host's `<url>/v1`; `base_url` required; auth ignored; first local-SLM adapter for the OT direction ([`sync.md`](sync.md) §2) |
+| `NvidiaChatDriver` | `"nvidia"` | `api` | NVIDIA NIM endpoint |
 
-OpenAI-compatible subclasses (`GeminiChatDriver`, `OllamaChatDriver`, `GrokChatDriver`,
-`NvidiaChatDriver`) inherit tool-use + `usage` parsing for free. Pricing is deployment
-config, not per-model source (the `__unknown__` fallback in `cost_tracking.py` covers
-them; operators set real rates in `llm_pricing:`).
+All four concrete adapters subclass `OpenAIChatDriver` and inherit tool serialisation,
+`usage` parsing and error classification for free. Pricing is deployment config, not
+per-model source (the `__unknown__` fallback in `cost_tracking.py` covers them;
+operators set real rates in `llm_pricing:`).
+
+They need one opt-in extra — `pip install agentix[openai-compat]` — which pulls the
+`openai` SDK in purely as the HTTP client for that wire.
 
 ### Intrinsic gateway adapter
 
@@ -87,27 +93,6 @@ them; operators set real rates in `llm_pricing:`).
   semantics canonical in [`budgets.md`](budgets.md) §3.
 - The dispatcher consumes a `ChatDriver` (constructor kwarg `driver=`).
 
-### 2.1 Anthropic token sources (`drivers/adapters/intrinsic/anthropic_auth.py`)
-
-Claude Code rotates OAuth tokens every ~hour. A static token captured at init time
-would expire mid-session. The provider receives a **`TokenSource`** it re-reads on
-every `complete()` call:
-
-| Source class | Description |
-|---|---|
-| `StaticTokenSource` | Literal API key or OAuth token |
-| `EnvTokenSource` | Re-reads a named env var on every call |
-| `FileTokenSource` | Re-reads `~/.claude/.credentials.json` on every call |
-| `KeychainTokenSource` | macOS Keychain via `security find-generic-password` on every call |
-| `ChainTokenSource` | Tries sources in order; returns first non-raising |
-
-`resolve_token_source(api_key, credentials_path, keychain_service)` is the factory
-used by `AnthropicChatDriver`. Priority: explicit `api_key` → `CLAUDE_CODE_OAUTH_TOKEN`
-/ `ANTHROPIC_AUTH_TOKEN` / `ANTHROPIC_API_KEY` env vars → keychain (if configured) →
-credentials file (`~/.claude/.credentials.json` by default). Tokens prefixed
-`sk-ant-oat` are treated as OAuth (sent as `Authorization: Bearer`); all others as API
-keys (`x-api-key`). OAuth billing header override: `AGENTIX_ANTHROPIC_BILLING_HEADER`.
-
 ## 3. Embedding driver family (`drivers/embedding.py`)
 
 `EmbeddingDriver` protocol + `OpenAIEmbeddingDriver` / `HubleEmbeddingDriver`,
@@ -117,9 +102,10 @@ ranking is **not** a driver concept: `CosineIndex` lives in
 `agentix.storage.vector_index`. What gets embedded is the memory layer's decision
 ([`memory.md`](memory.md) §4).
 
-- **`OpenAIEmbeddingDriver`** (factory key `"openai-embedding"`) — `text-embedding-3-small`
-  by default (1536 dims); re-uses the `openai` SDK already shipped for chat; key from
-  `OPENAI_API_KEY` or `api_key`. `base_url` accepted for compatible endpoints.
+- **`OpenAIEmbeddingDriver`** (factory key `"openai-compat-embedding"`) — the
+  `/v1/embeddings` wire; `text-embedding-3-small` by default (1536 dims); re-uses the
+  `openai` SDK as the HTTP client. Carries no provider identity: `api_key` and
+  `base_url` are both required (no ambient env fallback).
 - **`HubleEmbeddingDriver`** (factory key `"huble-embedding"`) — POSTs to the HUBLE
   gateway (`{base_url}{embeddings_path}`; default path `/api/v2/embeddings`) with
   OpenAI-shape body; 404 on the path → clear error directing to fallback or config.
@@ -215,7 +201,7 @@ backend means writing a new driver; the store and every consumer stay untouched.
   `base_url`, `api_key_env` (**the env-var NAME, never a secret** — 12-factor),
   `default`, `scope` (`"process"` default or `"session"`, see below), `options`.
   `KernelConfig.drivers: tuple[DriverSpec, ...]`; empty →
-  `derive_driver_specs(cfg)` maps the legacy anthropic/huble/melious blocks (via
+  `derive_driver_specs(cfg)` maps the legacy huble/melious blocks (via
   `enabled_providers` — the activation SSoT is unchanged). Collapsing those blocks
   into `drivers:` is the v0.6 config migration
   ([`kernel-config-reference.md`](kernel-config-reference.md)).
@@ -353,7 +339,7 @@ is new — defined beside the driver, not in the kernel.
 - **Remaining modalities** — vision, tts, timeseries protocols + adapters (the stt
   proof establishes the pattern); a type-generic failover chain (don't generalize
   before a second consumer exists).
-- **Config collapse** — fold `anthropic:`/`huble:`/`melious:` into `drivers:` (v0.6).
+- **Config collapse** — fold `huble:`/`melious:` into `drivers:` (v0.6).
 - **Lifecycle verbs** — `health()` / `warmup()` for local-runtime drivers.
 - **Second storage backends** — MySQL/Postgres behind `RelationalDriver` for the
   kernel store schema (the `PostgresRelationalDriver` satisfies the protocol; porting

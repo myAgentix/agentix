@@ -215,7 +215,7 @@
   <!-- LLM Providers -->
   <rect x="744" y="522" width="202" height="64" rx="5" fill="#fff9e6" stroke="#c8960a" stroke-width="1.2"/>
   <text x="845" y="541" text-anchor="middle" font-size="11" font-weight="bold" fill="#7a5800">LLM Providers</text>
-  <text x="845" y="555" text-anchor="middle" font-size="10" fill="#7a5800">Melious · Anthropic · Groq</text>
+  <text x="845" y="555" text-anchor="middle" font-size="10" fill="#7a5800">Melious · Gemini · Ollama</text>
   <text x="845" y="568" text-anchor="middle" font-size="10" fill="#7a5800">chat failover chain</text>
 
   <!-- Arrows from columns down to infra -->

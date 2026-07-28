@@ -31,8 +31,8 @@ curl -LsSf https://raw.githubusercontent.com/myAgentix/agentix/main/scripts/inst
 # Uninstall (keeps config.yaml + data; add --purge to delete everything)
 curl -LsSf https://raw.githubusercontent.com/myAgentix/agentix/main/scripts/install.sh | bash -s -- uninstall
 
-# Add a vendor LLM extra (appended onto daemon,cli,sdk — accepts vendor ToS)
-curl -LsSf https://raw.githubusercontent.com/myAgentix/agentix/main/scripts/install.sh | AGENTIX_EXTRAS=anthropic bash -s -- install
+# Add the LLM wire extra (appended onto daemon,cli,sdk — accepts endpoint ToS)
+curl -LsSf https://raw.githubusercontent.com/myAgentix/agentix/main/scripts/install.sh | AGENTIX_EXTRAS=openai-compat bash -s -- install
 
 # Pin an exact version / custom install directory
 curl -LsSf .../install.sh | AGENTIX_VERSION=v0.7.1 AGENTIX_HOME=~/myproject bash -s -- install
@@ -53,7 +53,7 @@ Bare `| bash` (no subcommand) still defaults to `install`. After install, activa
 `~/.agentix/agentixd.sock`; probe with `curl --unix-socket ~/.agentix/agentixd.sock http://x/health/live`).
 
 `AGENTIX_EXTRAS` is **appended** onto the base `daemon,cli,sdk` set, so the daemon and CLI
-are always present — e.g. `AGENTIX_EXTRAS=anthropic` adds the Anthropic SDK on top.
+are always present — e.g. `AGENTIX_EXTRAS=openai-compat` adds the LLM wire SDK on top.
 
 **Extras reference** (the `agentix[...]` extras; the curl installer always adds `daemon,cli,sdk`
 and appends any `AGENTIX_EXTRAS` on top):
@@ -64,11 +64,8 @@ and appends any `AGENTIX_EXTRAS` on top):
 | `minio` | MinIO object store | Apache 2.0 |
 | `postgresql` | PostgreSQL driver | MIT (asyncpg) |
 | `hf` | HuggingFace hub SDK | Apache 2.0 |
-| `anthropic` | Anthropic chat | Requires Anthropic API key + ToS |
-| `openai` | OpenAI / Gemini / Ollama / Grok / NVIDIA / Melious | Requires OpenAI-compatible API key + ToS |
-| `groq` | Groq chat | Requires Groq API key + ToS |
+| `openai-compat` | Melious / Gemini / Ollama / NVIDIA chat + embeddings | Requires an OpenAI-compatible endpoint key + its ToS |
 | `all-intrinsic` | minio + postgresql + hf | |
-| `all-vendors` | anthropic + openai + groq | |
 | `all` | Everything | |
 
 See [docs/vendor-licenses.md](docs/vendor-licenses.md) for SDK licenses and provider ToS links.
@@ -149,8 +146,9 @@ The daemon boots fine with **no config** — health, admin and scaffold routes c
 
 ```sh
 agentix config init          # writes a commented ~/.agentix/config.yaml
-agentix driver install anthropic
-export ANTHROPIC_API_KEY=sk-ant-...      # keep keys in env, not in the unit file
+agentix driver install melious
+export MELIOUS_API_KEY=...               # keep keys in env, not in the unit file
+export MELIOUS_BASE_URL=...
 agentix config validate      # checks config + driver SDK + key
 # restart the daemon so it picks up the config (Ctrl-C + rerun, or `systemctl --user restart agentixd`)
 ```

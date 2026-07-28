@@ -59,11 +59,11 @@ def _lookup_pricing(model: str, pricing_table: Mapping[str, ModelPricing]) -> Mo
     """Resolve ``model`` against ``pricing_table`` with prefix-match fallback.
 
     Provider responses include a date-stamped model id:
-    ``claude-sonnet-4-6-20260101``, ``gpt-5-mini-2025-11-01``. An exact
+    ``some-model-4-6-20260101``, ``other-model-mini-2025-11-01``. An exact
     dict lookup misses and the call falls through to ``__unknown__`` —
     silent undercount that also causes ``TokenBudgetMiddleware`` to
     under-count and run past budget. This helper strips one trailing
-    ``-<digit-tail>`` segment at a time and retries, so a dated Claude
+    ``-<digit-tail>`` segment at a time and retries, so a date-stamped
     id still resolves to the base family's pricing row.
     """
     if model in pricing_table:

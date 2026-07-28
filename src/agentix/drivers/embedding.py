@@ -8,7 +8,7 @@ embed (``docs/memory.md`` §4).
 
 Backends are pluggable so vendor-neutrality survives:
 
-* :class:`OpenAIEmbeddingDriver` — the openai SDK we already ship for the
+* :class:`OpenAIEmbeddingDriver` — the openai-compatible wire we already use for the
   chat path. ``text-embedding-3-small`` is $0.02 / 1M tokens — an entire
   recall catalogue costs cents to embed once.
 * :class:`HubleEmbeddingDriver` — gateway endpoint, OpenAI-shape wire,
@@ -22,7 +22,6 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
-import os
 from dataclasses import dataclass
 from typing import Protocol, runtime_checkable
 
@@ -83,18 +82,19 @@ class EmbeddingDriver(Protocol):
     async def embed(self, texts: list[str]) -> list[EmbeddingResult]: ...
 
 
-# ──────────────────────── OpenAI backend ──────────────────────────────
+# ─────────────────── OpenAI-compatible backend ────────────────────────
 
 
 class OpenAIEmbeddingDriver:
-    """OpenAI text-embedding-3-small (or any compatible model).
+    """Embeddings over the OpenAI-compatible ``/v1/embeddings`` wire.
 
-    Re-uses the ``openai`` SDK we ship for chat. Honors ``OPENAI_API_KEY``
-    or an explicit ``api_key`` arg. Default model is ``text-embedding-3-small``
-    (1536 dims) — cheap, fast, and good enough for catalogue + memory recall.
+    A wire format, not a provider: any endpoint serving that shape works.
+    Re-uses the ``openai`` SDK purely as the HTTP client, as the chat wire
+    base does. Carries no provider identity — ``api_key`` and ``base_url``
+    are the caller's to supply; there is no ambient env fallback.
     """
 
-    name = "openai"
+    name = "openai-compat"
 
     def __init__(
         self,
@@ -105,11 +105,12 @@ class OpenAIEmbeddingDriver:
     ) -> None:
         from openai import AsyncOpenAI  # local import — keep startup fast
 
-        key = api_key or os.environ.get("OPENAI_API_KEY")
-        if not key:
-            raise EmbeddingError("OpenAIEmbeddingDriver: OPENAI_API_KEY not set and no api_key passed")
+        if not api_key:
+            raise EmbeddingError("OpenAIEmbeddingDriver: no api_key passed")
+        if not base_url:
+            raise EmbeddingError("OpenAIEmbeddingDriver: no base_url passed (the /v1 endpoint)")
         self.model = model
-        self._client = AsyncOpenAI(api_key=key, base_url=base_url)
+        self._client = AsyncOpenAI(api_key=api_key, base_url=base_url)
 
     @property
     def descriptor(self) -> DriverDescriptor:
@@ -127,7 +128,7 @@ class OpenAIEmbeddingDriver:
         try:
             resp = await self._client.embeddings.create(model=self.model, input=texts)
         except Exception as exc:
-            raise EmbeddingError(f"OpenAI embedding failed: {exc}") from exc
+            raise EmbeddingError(f"openai-compat embedding failed: {exc}") from exc
         out: list[EmbeddingResult] = []
         for src, datum in zip(texts, resp.data, strict=True):
             out.append(EmbeddingResult(text=src, vector=tuple(datum.embedding), model=self.model))

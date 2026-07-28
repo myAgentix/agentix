@@ -17,7 +17,7 @@ from agentix.drivers.adapters.vendor.gemini import GeminiChatDriver
 from agentix.drivers.adapters.vendor.ollama import OllamaChatDriver
 from agentix.drivers.base import DriverInvalidRequest
 from agentix.drivers.chat import ChatRequest, ToolSpec
-from tests.unit.drivers.test_openai_groq_adapter import (
+from tests.unit.drivers.test_openai_compat_adapter import (
     _FakeChoice,
     _FakeCompletion,
     _FakeMessage,

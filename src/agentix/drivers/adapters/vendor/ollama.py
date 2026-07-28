@@ -14,7 +14,7 @@ placeholder is used when none is given.
 
 from __future__ import annotations
 
-from agentix.drivers.adapters.vendor.openai import OpenAIChatDriver
+from agentix.drivers.adapters.vendor.openai_compat import OpenAIChatDriver
 from agentix.drivers.base import DriverDescriptor, DriverInvalidRequest
 
 __all__ = ["OllamaChatDriver"]

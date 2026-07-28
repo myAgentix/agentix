@@ -237,10 +237,10 @@ plugin_packages: []
 drivers = await client.list_drivers()
 
 result = await client.install_driver(
-    key="openai",
+    key="melious",
     name="gpt4o",
-    model="gpt-4o",
-    api_key_env="OPENAI_API_KEY",
+    model="deepseek-v4-flash",
+    api_key_env="MELIOUS_API_KEY",
     dry_run=False,
 )
 

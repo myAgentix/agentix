@@ -74,7 +74,7 @@ immediately after the upstream returns.
 - **Pricing** — `ModelPricing` (per-million USD: input / output / cached input) and the
   operator-supplied table `KernelConfig.llm_pricing`
   ([`kernel-config-reference.md`](kernel-config-reference.md)). Lookup strips dated
-  model-id tails (`-<digits>`) so `claude-*-20250101` still resolves to its family row;
+  model-id tails (`-<digits>`) so `some-model-20250101` still resolves to its family row;
   a total miss falls to `FALLBACK_PRICING["__unknown__"]`, which deliberately
   **over-counts** — a wrong price must never under-count and run past the cap.
 - `CostTrackingMiddleware` is **telemetry-only**: it stamps `turn.cost_usd`, computes

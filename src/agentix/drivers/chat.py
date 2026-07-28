@@ -30,8 +30,8 @@ class ToolSpec(BaseModel):
 
     Adapters translate this shape to their own wire format:
 
-      * Anthropic: ``{name, description, input_schema}`` (JSON Schema).
-      * OpenAI / Groq: ``{"type": "function", "function": {name,
+      * Block-style wires: ``{name, description, input_schema}`` (JSON Schema).
+      * OpenAI-compatible wires: ``{"type": "function", "function": {name,
         description, parameters}}`` (parameters = our ``input_schema``).
 
     Callers build ``ToolSpec`` instances via :func:`tool_to_spec` so the
@@ -106,8 +106,8 @@ class ChatResponse(BaseModel):
     usage: TokenUsage = Field(default_factory=TokenUsage)
     model: str
     finish_reason: str | None = None
-    # Non-empty when the model emitted tool_use blocks (Anthropic) or
-    # tool_calls (OpenAI/Groq). The AgentDispatcher loops while this is
+    # Non-empty when the model emitted tool_use blocks or tool_calls,
+    # depending on the wire. The AgentDispatcher loops while this is
     # non-empty.
     tool_calls: list[ToolCall] = Field(default_factory=list)
     raw: dict[str, Any] = Field(default_factory=dict)

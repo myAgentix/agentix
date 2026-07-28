@@ -57,7 +57,7 @@ def _patch_dangling(messages: list[Message]) -> tuple[list[Message], int]:
     Rationale: a pre-computed "full satisfied" set flags a patch
     whenever the immediate follow-up doesn't carry the tool_result,
     even when a real one appears further along. That produced two
-    tool_result messages for the same tool_use_id → Anthropic rejects
+    tool_result messages for the same tool_use_id → strict providers reject
     the next request (K7).
     """
     out: list[Message] = []

@@ -1,5 +1,39 @@
 # Changelog
 
+## 0.8.0 — vendor-driver purge: anthropic, openai, groq, grok removed (BREAKING)
+
+- **Removed** `AnthropicChatDriver`, `OpenAIChatDriver`-as-a-provider, `GroqChatDriver`
+  and `GrokChatDriver`, plus the Anthropic-only auth subsystem
+  (`adapters/intrinsic/anthropic_auth.py`, all five `TokenSource` classes and
+  `resolve_token_source`). Factory keys `"anthropic"`, `"openai"`, `"groq"` and
+  `"grok"` no longer resolve. The kernel now ships **no first-party commercial
+  provider driver** — supply one out-of-tree via seam #13
+  (`register_driver_factory` or `DriverSpec(driver="pkg.mod:Class")`).
+- `adapters/vendor/openai.py` → **`adapters/vendor/openai_compat.py`**. The class keeps
+  the name `OpenAIChatDriver` because it models the `/v1/chat/completions` **wire**, not
+  a provider: no default model, no default endpoint, no `OPENAI_API_KEY` fallback —
+  `api_key`, `base_url` and `model` are all required. It is no longer a registered
+  factory key. `gemini`/`ollama`/`nvidia`/`melious` still subclass it, unchanged.
+- `OpenAIEmbeddingDriver` neutralised the same way; factory key
+  `"openai-embedding"` → **`"openai-compat-embedding"`**; `api_key` + `base_url` now
+  required.
+- **Config (BREAKING)**: `AnthropicConfig` and `KernelConfig.anthropic` deleted, as is
+  `config.anthropic_active()`. `_PROVIDER_PRIORITY` is now `("melious", "huble")`;
+  `select_enabled_provider` and `derive_driver_specs` fall back to **melious**.
+  `derive_driver_specs` no longer emits an ambient `OPENAI_API_KEY` embedding spec —
+  declare an embedding driver explicitly in `drivers:`.
+- **Extras (BREAKING)**: `[anthropic]`, `[openai]`, `[groq]` and `[all-vendors]` are
+  gone; one extra replaces them — **`[openai-compat]`** (the `openai` SDK, used purely
+  as the HTTP client for that wire). `[all]` updated.
+- `agentix config init` and the CLI/daemon driver catalogues now scaffold and list
+  `melious` rather than `anthropic`; both `_DRIVER_META` mirrors derive their tier from
+  a single `_WIRE_EXTRA` constant.
+- Docs: `drivers.md` §2 rewritten (§2.1 Anthropic token sources deleted),
+  `vendor-licenses.md`, `kernel-config-reference.md`, `quickstart.md`, `routing.md`,
+  `memory.md`, `budgets.md`, `contracts-consumer-guide.md`, `README.md`,
+  `scripts/install.sh` and both driver SVGs updated.
+- Net: **~1,800 LOC removed**; the default install now carries no commercial AI SDK.
+
 ## 0.7.1 — compliance: Check 6 plugin-register-missing
 
 - `agentix.compliance`: new Check 6 `plugin-register-missing` — if `plugin.py` is
