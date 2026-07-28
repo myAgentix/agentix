@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import re
 import time
-from typing import Literal
+from typing import Any, Literal
 
 import structlog
 from pydantic import BaseModel, Field
@@ -118,7 +118,7 @@ class MemoryRecallInput(BaseModel):
 class MemoryRecallOutput(BaseModel):
     slug: str
     found: bool
-    frontmatter: dict = Field(default_factory=dict)
+    frontmatter: dict[str, Any] = Field(default_factory=dict)
     sections: dict[str, str] = Field(default_factory=dict)
     latency_ms: int = 0
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 from pathlib import Path
 
@@ -105,10 +106,8 @@ def _load_registry_entries(mem_path: Path) -> list[dict]:
         line = line.strip()
         if not line:
             continue
-        try:
+        with contextlib.suppress(json.JSONDecodeError):
             entries.append(json.loads(line))
-        except json.JSONDecodeError:
-            pass
     # Keep only the last entry per slug (same semantics as compact).
     seen: dict[str, dict] = {}
     for e in entries:

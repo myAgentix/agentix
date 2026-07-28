@@ -87,6 +87,8 @@ ignore = ["E501"]
 "tests/**/*.py" = ["S101", "ASYNC240"]
 # typer's design requires calling typer.Option/Argument in function defaults (B008)
 "src/agentix_cli/**/*.py" = ["B008"]
+# agentixd's entrypoint is a typer command too — same constraint.
+"src/agentixd/main.py" = ["B008"]
 # Spike-harness primitives deliberately use blocking pathlib + simple try/except.
 "src/agentix/tools/spike/apply_patch.py" = ["ASYNC240"]
 "src/agentix/tools/spike/run_command.py" = ["SIM105"]

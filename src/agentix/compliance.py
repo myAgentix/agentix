@@ -303,7 +303,7 @@ def check_driver_compliance(src_root: Path) -> list[ComplianceViolation]:
     return DriverComplianceChecker(src_root).check_all()
 
 
-def enforce_plugin_compliance(module: "ModuleType") -> None:
+def enforce_plugin_compliance(module: ModuleType) -> None:
     """Assert a plugin module's source tree passes all structural compliance rules.
 
     Called by the kernel's plugin load loop before ``mod.register()`` is invoked.

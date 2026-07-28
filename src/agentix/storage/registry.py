@@ -14,7 +14,7 @@ Design choices:
   no full-file rewrite on hot path.
 - **In-memory dict** for O(1) slug resolution after a single ``load()`` scan.
 - **One shared file** for all drivers — the ``driver`` field distinguishes entries.
-  At 1,000 tenants × 10 drivers × 10 pages each ≈ 100k entries ≈ 20 MB.
+  At 1,000 tenants x 10 drivers x 10 pages each ≈ 100k entries ≈ 20 MB.
 - **``compact()``** strips duplicate slugs (keep last) — run offline or periodically.
 """
 
@@ -136,28 +136,27 @@ class MemoryRegistry:
         concurrently — holds the ``registry`` advisory lock for the duration.
         """
         await self.load()
-        async with self._mu:
-            async with self._driver.lock("registry", timeout_seconds=30.0):
+        async with self._mu, self._driver.lock("registry", timeout_seconds=30.0):
+            try:
+                text = await self._driver.read_text(_REGISTRY_FILE)
+            except FileNotFoundError:
+                return 0
+            lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+            seen: dict[str, str] = {}
+            for line in lines:
                 try:
-                    text = await self._driver.read_text(_REGISTRY_FILE)
-                except FileNotFoundError:
-                    return 0
-                lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
-                seen: dict[str, str] = {}
-                for line in lines:
-                    try:
-                        entry = json.loads(line)
-                        slug = entry.get("slug")
-                        if slug:
-                            seen[slug] = line
-                    except json.JSONDecodeError:
-                        pass
-                removed = len(lines) - len(seen)
-                if removed > 0:
-                    compacted = "\n".join(seen.values()) + "\n"
-                    await self._driver.write_text(_REGISTRY_FILE, compacted)
-                    log.info("memory.registry.compacted", removed=removed, kept=len(seen))
-                return removed
+                    entry = json.loads(line)
+                    slug = entry.get("slug")
+                    if slug:
+                        seen[slug] = line
+                except json.JSONDecodeError:
+                    pass
+            removed = len(lines) - len(seen)
+            if removed > 0:
+                compacted = "\n".join(seen.values()) + "\n"
+                await self._driver.write_text(_REGISTRY_FILE, compacted)
+                log.info("memory.registry.compacted", removed=removed, kept=len(seen))
+            return removed
 
     def entries(
         self,

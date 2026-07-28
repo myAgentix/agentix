@@ -11,7 +11,6 @@ import os
 import signal
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Optional
 
 import structlog
 import typer
@@ -199,7 +198,7 @@ _cli = typer.Typer(
 def _cmd(
     status: bool = typer.Option(False, "--status", help="Show daemon health and exit."),
     log: int = typer.Option(-1, "--log", metavar="N", help="Tail last N log lines (default 50).", show_default=False),
-    config: Optional[Path] = typer.Option(None, "--config", "-c", help="Path to config.yaml."),
+    config: Path | None = typer.Option(None, "--config", "-c", help="Path to config.yaml."),
 ) -> None:
     """Agentix kernel daemon — session runtime and admin."""
     cfg_path = config or _resolve_cfg_path()
