@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -160,6 +161,33 @@ _DRIVER_META: dict[str, dict[str, str]] = {
 _VENDOR_KEYS = {k for k, v in _DRIVER_META.items() if v["extra"] == _WIRE_EXTRA}
 _INTEGRATION_KEYS = {k for k, v in _DRIVER_META.items() if v.get("package")}
 
+# Env vars each chat provider reads its key / base_url from. MUST match
+# agentix.drivers.factory. Consumed by `driver providers` and `model list`.
+# key_env == "" → no key needed (Ollama placeholder). base_url_required → the
+# provider has no default endpoint and only reads a configured base_url.
+_PROVIDER_ENV: dict[str, dict[str, str]] = {
+    "gemini": {"key_env": "GEMINI_API_KEY"},
+    "nvidia": {"key_env": "NVIDIA_API_KEY"},
+    "ollama": {"key_env": "", "base_url_required": "1"},
+    "melious": {"key_env": "MELIOUS_API_KEY", "base_url_env": "MELIOUS_BASE_URL"},
+}
+
+
+def _provider_keys() -> list[str]:
+    """Chat model providers (the surface for `model list`)."""
+    return sorted(k for k, v in _DRIVER_META.items() if v.get("type") == "model" and v.get("modality") == "chat")
+
+
+def _key_available(key: str) -> bool | None:
+    """True/False if the provider's API key env var is set; None if no key is needed
+    (Ollama placeholder / gateway providers like huble)."""
+    if _DRIVER_META.get(key, {}).get("source") == "gateway":
+        return None
+    key_env = _PROVIDER_ENV.get(key, {}).get("key_env")
+    if not key_env:  # "" (no key) or provider not in the map
+        return None
+    return bool(os.environ.get(key_env))
+
 
 def _sdk_installed(sdk: str) -> bool:
     if not sdk:
@@ -295,6 +323,29 @@ def _driver_list_active(config_path: Path | None) -> None:
         )
     print_table(t)
     typer.echo(f"\n{len(cfg.drivers)} driver(s) in {cfg.config_path}")
+
+
+@app.command("providers")
+def driver_providers(
+    config_path: Path | None = typer.Option(None, "--config", help="Config file path"),
+) -> None:
+    """List chat model providers and whether each is usable (SDK installed, key present).
+
+    The pick-a-provider step before `agentix model list <provider>`.
+    """
+    cfg = load_config(config_path)
+    configured = {d.driver for d in cfg.drivers} | {d.name for d in cfg.drivers}
+
+    t = make_table("Provider", "Modality", "Source", "SDK", "Key", "Configured")
+    for key in _provider_keys():
+        meta = _DRIVER_META[key]
+        sdk_cell = "[green]yes[/green]" if _sdk_installed(meta["sdk"]) else "[red]no[/red]"
+        avail = _key_available(key)
+        key_cell = "[green]yes[/green]" if avail else ("[dim]n/a[/dim]" if avail is None else "[red]no[/red]")
+        conf_cell = "[green]yes[/green]" if key in configured else ""
+        t.add_row(key, meta["modality"], meta["source"], sdk_cell, key_cell, conf_cell)
+    print_table(t)
+    typer.echo("\nList a provider's models:  agentix model list <provider>")
 
 
 @app.command("show")

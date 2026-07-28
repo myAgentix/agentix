@@ -128,3 +128,9 @@ class ChatDriver(Driver, Protocol):
     async def complete(self, request: ChatRequest) -> ChatResponse:
         """Issue a single non-streaming chat completion."""
         ...
+
+    # NOTE: model listing (`list_models()`) is provided by the concrete API-backed
+    # adapters (OpenAIChatDriver and its subclasses), not declared here — this
+    # Protocol is @runtime_checkable and a required method would exclude gateway
+    # drivers (huble) and wrappers (failover chain) that have no provider /models
+    # endpoint. Callers hasattr-guard it.
