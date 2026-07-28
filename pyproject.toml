@@ -63,7 +63,12 @@ dev = [
     "pytest-asyncio>=0.24",
     "pytest-cov>=6.0",
     "respx>=0.22",
-    "ruff>=0.8",
+    # PINNED, not a floor: ruff's formatter and lint rules change between
+    # releases, and there is no uv.lock here — so an unpinned range lets an
+    # upstream release turn CI red with no code change (that is how main went
+    # red on 2026-07-27 and stayed red for eight days). Bump this deliberately,
+    # in its own PR, so the reformat is reviewable.
+    "ruff==0.16.0",
     "mypy>=1.13",
     "pyyaml>=6.0",
     "types-PyYAML>=6.0",
@@ -87,6 +92,8 @@ ignore = ["E501"]
 "tests/**/*.py" = ["S101", "ASYNC240"]
 # typer's design requires calling typer.Option/Argument in function defaults (B008)
 "src/agentix_cli/**/*.py" = ["B008"]
+# agentixd's entrypoint is a typer command too — same constraint.
+"src/agentixd/main.py" = ["B008"]
 # Spike-harness primitives deliberately use blocking pathlib + simple try/except.
 "src/agentix/tools/spike/apply_patch.py" = ["ASYNC240"]
 "src/agentix/tools/spike/run_command.py" = ["SIM105"]

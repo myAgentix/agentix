@@ -36,6 +36,9 @@ import structlog
 if TYPE_CHECKING:
     from agentix.drivers.file_store import FileStoreDriver
 
+    # Annotation-only: the runtime import stays lazy inside ``registry`` below.
+    from agentix.storage.registry import MemoryRegistry
+
 log = structlog.get_logger(__name__)
 
 
@@ -80,10 +83,7 @@ class MemoryPage:
         been round-tripped.
         """
         sections_md = _sections_to_markdown(self.sections)
-        if self.preamble and sections_md:
-            preamble = self.preamble.rstrip("\n") + "\n\n"
-        else:
-            preamble = self.preamble
+        preamble = self.preamble.rstrip("\n") + "\n\n" if self.preamble and sections_md else self.preamble
         post = frontmatter.Post(preamble + sections_md, **self.frontmatter)
         dumped: str = frontmatter.dumps(post)
         return dumped + "\n"
@@ -111,7 +111,7 @@ class MemoryStore:
         return self._driver
 
     @property
-    def registry(self) -> "MemoryRegistry":
+    def registry(self) -> MemoryRegistry:
         """Slug → path registry backed by ``registry.jsonl`` at the store root.
 
         Lazy-initialised on first access.  Call ``await store.registry.load()``
@@ -119,6 +119,7 @@ class MemoryStore:
         """
         if not hasattr(self, "_registry"):
             from agentix.storage.registry import MemoryRegistry
+
             self._registry: MemoryRegistry = MemoryRegistry(self._driver)
         return self._registry
 

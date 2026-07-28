@@ -21,6 +21,7 @@ def _make_request(kernel: object) -> SimpleNamespace:
 
 # ── a: kernel not yet ready ───────────────────────────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_not_ready_returns_503_starting() -> None:
     kernel = SimpleNamespace(ready=False, error="still booting", _readiness_hook=None)
@@ -28,6 +29,7 @@ async def test_not_ready_returns_503_starting() -> None:
     assert resp.status_code == 503
     body = resp.body
     import json
+
     data = json.loads(body)
     assert data["status"] == "starting"
     assert data["kernel_ready"] is False
@@ -35,11 +37,13 @@ async def test_not_ready_returns_503_starting() -> None:
 
 # ── b: ready, no hook ─────────────────────────────────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_ready_no_hook_returns_200() -> None:
     kernel = SimpleNamespace(ready=True, error=None, _readiness_hook=None)
     resp = await ready(_make_request(kernel))  # type: ignore[arg-type]
     import json
+
     data = json.loads(resp.body)
     assert resp.status_code == 200
     assert data["status"] == "ready"
@@ -49,6 +53,7 @@ async def test_ready_no_hook_returns_200() -> None:
 
 # ── c: hook returns all True ──────────────────────────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_hook_all_true_returns_200() -> None:
     async def _hook(k: object) -> dict[str, bool]:
@@ -57,6 +62,7 @@ async def test_hook_all_true_returns_200() -> None:
     kernel = SimpleNamespace(ready=True, error=None, _readiness_hook=_hook)
     resp = await ready(_make_request(kernel))  # type: ignore[arg-type]
     import json
+
     data = json.loads(resp.body)
     assert resp.status_code == 200
     assert data["status"] == "ready"
@@ -64,6 +70,7 @@ async def test_hook_all_true_returns_200() -> None:
 
 
 # ── d: hook returns any False ─────────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_hook_any_false_returns_503_degraded() -> None:
@@ -73,6 +80,7 @@ async def test_hook_any_false_returns_503_degraded() -> None:
     kernel = SimpleNamespace(ready=True, error=None, _readiness_hook=_hook)
     resp = await ready(_make_request(kernel))  # type: ignore[arg-type]
     import json
+
     data = json.loads(resp.body)
     assert resp.status_code == 503
     assert data["status"] == "degraded"
@@ -82,6 +90,7 @@ async def test_hook_any_false_returns_503_degraded() -> None:
 
 # ── e: hook raises ────────────────────────────────────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_hook_raises_returns_503_with_error() -> None:
     async def _hook(k: object) -> dict[str, bool]:
@@ -90,6 +99,7 @@ async def test_hook_raises_returns_503_with_error() -> None:
     kernel = SimpleNamespace(ready=True, error=None, _readiness_hook=_hook)
     resp = await ready(_make_request(kernel))  # type: ignore[arg-type]
     import json
+
     data = json.loads(resp.body)
     assert resp.status_code == 503
     assert data["status"] == "degraded"
@@ -100,6 +110,7 @@ async def test_hook_raises_returns_503_with_error() -> None:
 
 # ── f: hook times out ────────────────────────────────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_hook_timeout_returns_503_with_error() -> None:
     async def _hook(k: object) -> dict[str, bool]:
@@ -109,6 +120,7 @@ async def test_hook_timeout_returns_503_with_error() -> None:
     kernel = SimpleNamespace(ready=True, error=None, _readiness_hook=_hook)
     resp = await ready(_make_request(kernel))  # type: ignore[arg-type]
     import json
+
     data = json.loads(resp.body)
     assert resp.status_code == 503
     assert data["status"] == "degraded"

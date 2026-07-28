@@ -11,7 +11,6 @@ import os
 import signal
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Optional
 
 import structlog
 import typer
@@ -89,8 +88,10 @@ app = create_app()
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 
+
 def _resolve_socket(cfg_path: Path) -> Path:
     from agentixd._config import _DEFAULT_SOCKET
+
     env = os.environ.get("AGENTIXD_SOCKET")
     if env:
         return Path(env)
@@ -117,6 +118,7 @@ def _tee_to_log_file(log_path: Path) -> None:
     without needing to reconfigure structlog's PrintLoggerFactory.
     """
     import sys
+
     log_path.parent.mkdir(parents=True, exist_ok=True)
     log_path.touch(mode=0o600, exist_ok=True)
     os.chmod(str(log_path), 0o600)
@@ -196,7 +198,7 @@ _cli = typer.Typer(
 def _cmd(
     status: bool = typer.Option(False, "--status", help="Show daemon health and exit."),
     log: int = typer.Option(-1, "--log", metavar="N", help="Tail last N log lines (default 50).", show_default=False),
-    config: Optional[Path] = typer.Option(None, "--config", "-c", help="Path to config.yaml."),
+    config: Path | None = typer.Option(None, "--config", "-c", help="Path to config.yaml."),
 ) -> None:
     """Agentix kernel daemon — session runtime and admin."""
     cfg_path = config or _resolve_cfg_path()
