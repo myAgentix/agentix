@@ -24,14 +24,15 @@ directly with the provider.
 |-------|---------|-----|-------------|
 | `[openai-compat]` | `pip install agentix[openai-compat]` | `openai` | MIT |
 
-One extra, four adapters — each endpoint carries its own ToS:
+One extra, two adapters — each endpoint carries its own ToS:
 
 | Adapter | Endpoint ToS |
 |---------|--------------|
 | **Melious** | per your Melious agreement |
-| **Gemini** | https://ai.google.dev/gemini-api/terms |
-| **Ollama** | https://ollama.com/legal/terms |
 | **NVIDIA NIM** | https://www.nvidia.com/en-us/data-center/products/ai-enterprise/eula/ |
+
+Out-of-tree adapters (seam #13) carry their own — the kernel makes no claim about an
+endpoint it does not ship a driver for.
 
 ## Intrinsic extras
 

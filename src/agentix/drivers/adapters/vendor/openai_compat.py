@@ -1,9 +1,10 @@
 """OpenAI-compatible chat-completions base — a wire format, not a provider.
 
-The ``/v1/chat/completions`` shape is a de-facto industry standard: Gemini,
-Ollama, NVIDIA NIM and Melious all serve it, so they subclass this driver and
-supply only their endpoint, credential and default model. Tool serialisation,
-response parsing and error classification live here once.
+The ``/v1/chat/completions`` shape is a de-facto industry standard — NVIDIA NIM
+and Melious both serve it (as do Gemini's compat endpoint, Ollama, vLLM and
+most local runtimes), so an adapter subclasses this driver and supplies only its
+endpoint, credential and default model. Tool serialisation, response parsing and
+error classification live here once.
 
 This module deliberately carries no provider identity: there is no default
 model, no default endpoint and no ambient API-key env var. Subclasses (or the
@@ -141,7 +142,7 @@ class OpenAIChatDriver:
     async def list_models(self) -> list[str]:
         # GET /v1/models on the OpenAI-compatible endpoint. Same error mapping
         # as complete() so callers get the canonical taxonomy. Inherited by every
-        # OpenAI-compatible subclass (Melious, Gemini, NVIDIA, Ollama).
+        # OpenAI-compatible subclass (Melious, NVIDIA, and any out-of-tree one).
         try:
             resp = await self._client.models.list()
         except openai.RateLimitError as e:

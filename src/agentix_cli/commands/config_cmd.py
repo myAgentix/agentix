@@ -27,8 +27,8 @@ budget_usd: 200.0
 # The default chat driver. Install its SDK with: agentix driver install melious
 # and export MELIOUS_API_KEY + MELIOUS_BASE_URL before starting the daemon.
 #
-# The kernel ships adapters for the OpenAI-compatible wire (melious, gemini,
-# ollama, nvidia) only. For a first-party commercial provider, supply your own
+# The kernel ships adapters for the OpenAI-compatible wire (melious, nvidia)
+# only. For any other provider — commercial, gateway or local — supply your own
 # driver via seam #13 and point `driver:` at its dotted path, e.g.
 #   driver: my_pkg.drivers:MyChatDriver
 drivers:

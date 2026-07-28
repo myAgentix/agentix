@@ -24,22 +24,6 @@ _DRIVER_META: dict[str, dict[str, str]] = {
     # openai-compat wire — require the opt-in extra (pip install agentix[openai-compat]).
     # The OpenAI SDK is used purely as the HTTP client for that wire format;
     # first-party commercial providers are NOT shipped (supply them via seam #13).
-    "gemini": {
-        "type": "model",
-        "modality": "chat",
-        "source": "api",
-        "extra": "openai-compat",
-        "sdk": "openai",
-        "package": "",
-    },
-    "ollama": {
-        "type": "model",
-        "modality": "chat",
-        "source": "local",
-        "extra": "openai-compat",
-        "sdk": "openai",
-        "package": "",
-    },
     "nvidia": {
         "type": "model",
         "modality": "chat",
@@ -51,14 +35,6 @@ _DRIVER_META: dict[str, dict[str, str]] = {
     "melious": {
         "type": "model",
         "modality": "chat",
-        "source": "api",
-        "extra": "openai-compat",
-        "sdk": "openai",
-        "package": "",
-    },
-    "openai-compat-embedding": {
-        "type": "model",
-        "modality": "embedding",
         "source": "api",
         "extra": "openai-compat",
         "sdk": "openai",
@@ -163,12 +139,9 @@ _INTEGRATION_KEYS = {k for k, v in _DRIVER_META.items() if v.get("package")}
 
 # Env vars each chat provider reads its key / base_url from. MUST match
 # agentix.drivers.factory. Consumed by `driver providers` and `model list`.
-# key_env == "" → no key needed (Ollama placeholder). base_url_required → the
-# provider has no default endpoint and only reads a configured base_url.
+# key_env == "" → the provider needs no key of its own.
 _PROVIDER_ENV: dict[str, dict[str, str]] = {
-    "gemini": {"key_env": "GEMINI_API_KEY"},
     "nvidia": {"key_env": "NVIDIA_API_KEY"},
-    "ollama": {"key_env": "", "base_url_required": "1"},
     "melious": {"key_env": "MELIOUS_API_KEY", "base_url_env": "MELIOUS_BASE_URL"},
 }
 
@@ -180,7 +153,7 @@ def _provider_keys() -> list[str]:
 
 def _key_available(key: str) -> bool | None:
     """True/False if the provider's API key env var is set; None if no key is needed
-    (Ollama placeholder / gateway providers like huble)."""
+    (gateway providers like huble, or a provider with no key of its own)."""
     if _DRIVER_META.get(key, {}).get("source") == "gateway":
         return None
     key_env = _PROVIDER_ENV.get(key, {}).get("key_env")

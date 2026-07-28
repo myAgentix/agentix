@@ -6,13 +6,16 @@ similar? This family produces the vectors; cosine ranking lives in
 ``agentix.storage.vector_index`` and the memory layer decides what to
 embed (``docs/memory.md`` §4).
 
-Backends are pluggable so vendor-neutrality survives:
+Backends are pluggable so vendor-neutrality survives. The kernel ships exactly
+one:
 
-* :class:`OpenAIEmbeddingDriver` — the openai-compatible wire we already use for the
-  chat path. ``text-embedding-3-small`` is $0.02 / 1M tokens — an entire
-  recall catalogue costs cents to embed once.
 * :class:`HubleEmbeddingDriver` — gateway endpoint, OpenAI-shape wire,
   proxies to whichever upstream embedding model is configured.
+
+Any other backend is an ordinary out-of-tree driver (seam #13): implement the
+:class:`EmbeddingDriver` protocol below and register it with
+``register_driver_factory``, or point a ``DriverSpec`` dotted path at your class.
+The kernel deliberately ships no ambient-credential embedding backend.
 
 Caching: every embed() call goes through a SQLite cache keyed by
 ``sha256(model || text)`` so re-runs don't re-pay the embedding cost.
@@ -38,7 +41,6 @@ __all__ = [
     "EmbeddingError",
     "EmbeddingResult",
     "HubleEmbeddingDriver",
-    "OpenAIEmbeddingDriver",
 ]
 
 
@@ -80,62 +82,6 @@ class EmbeddingDriver(Protocol):
     model: str
 
     async def embed(self, texts: list[str]) -> list[EmbeddingResult]: ...
-
-
-# ─────────────────── OpenAI-compatible backend ────────────────────────
-
-
-class OpenAIEmbeddingDriver:
-    """Embeddings over the OpenAI-compatible ``/v1/embeddings`` wire.
-
-    A wire format, not a provider: any endpoint serving that shape works.
-    Re-uses the ``openai`` SDK purely as the HTTP client, as the chat wire
-    base does. Carries no provider identity — ``api_key`` and ``base_url``
-    are the caller's to supply; there is no ambient env fallback.
-    """
-
-    name = "openai-compat"
-
-    def __init__(
-        self,
-        *,
-        api_key: str | None = None,
-        model: str = "text-embedding-3-small",
-        base_url: str | None = None,
-    ) -> None:
-        from openai import AsyncOpenAI  # local import — keep startup fast
-
-        if not api_key:
-            raise EmbeddingError("OpenAIEmbeddingDriver: no api_key passed")
-        if not base_url:
-            raise EmbeddingError("OpenAIEmbeddingDriver: no base_url passed (the /v1 endpoint)")
-        self.model = model
-        self._client = AsyncOpenAI(api_key=api_key, base_url=base_url)
-
-    @property
-    def descriptor(self) -> DriverDescriptor:
-        return DriverDescriptor(
-            name=self.name,
-            type="model",
-            modality="embedding",
-            source="api",
-            default_model=self.model,
-        )
-
-    async def embed(self, texts: list[str]) -> list[EmbeddingResult]:
-        if not texts:
-            return []
-        try:
-            resp = await self._client.embeddings.create(model=self.model, input=texts)
-        except Exception as exc:
-            raise EmbeddingError(f"openai-compat embedding failed: {exc}") from exc
-        out: list[EmbeddingResult] = []
-        for src, datum in zip(texts, resp.data, strict=True):
-            out.append(EmbeddingResult(text=src, vector=tuple(datum.embedding), model=self.model))
-        return out
-
-    async def aclose(self) -> None:
-        await self._client.close()
 
 
 # ──────────────────────── HUBLE backend ───────────────────────────────
@@ -210,7 +156,8 @@ class HubleEmbeddingDriver:
             raise EmbeddingError(
                 f"HUBLE deployment doesn't expose {self._path} — "
                 f"embeddings endpoint not configured upstream. "
-                f"Set the huble embeddings_path or fall back to OpenAIEmbeddingDriver."
+                f"Set the huble embeddings_path, or supply your own embedding driver "
+                f"via seam #13 (register_driver_factory / DriverSpec dotted path)."
             )
         if response.status_code >= 400:
             raise EmbeddingError(f"HUBLE embedding HTTP {response.status_code}: {response.text[:200]}")

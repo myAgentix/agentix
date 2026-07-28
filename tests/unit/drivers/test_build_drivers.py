@@ -56,9 +56,9 @@ class _FakeMelious(_FakeHuble):
     default_model = "deepseek-v4-flash"
 
 
-class _FakeGemini(_FakeHuble):
-    name = "gemini"
-    default_model = "gemini-2.0-flash"
+class _FakeNvidia(_FakeHuble):
+    name = "nvidia"
+    default_model = "meta/llama-3.3-70b-instruct"
 
 
 # ── derive parity with enabled_providers ──────────────────────────
@@ -132,29 +132,29 @@ def test_model_override_reaches_huble_not_other_drivers() -> None:
         huble=HubleConfig(enabled=True, base_url="https://h.example", api_key="k", model="glm-4.7"),
         drivers=(
             DriverSpec(name="huble", driver="huble", modality="chat", default=True),
-            DriverSpec(name="gemini", driver="gemini", modality="chat", model="gemini-2.0-flash"),
+            DriverSpec(name="nvidia", driver="nvidia", modality="chat", model="meta/llama-3.3-70b-instruct"),
         ),
     )
     huble_kwargs: dict[str, Any] = {}
-    gemini_kwargs: dict[str, Any] = {}
+    nvidia_kwargs: dict[str, Any] = {}
 
     class _CapturingHuble(_FakeHuble):
         def __init__(self, **kwargs: Any) -> None:
             super().__init__(**kwargs)
             huble_kwargs.update(kwargs)
 
-    class _CapturingGemini(_FakeGemini):
+    class _CapturingNvidia(_FakeNvidia):
         def __init__(self, **kwargs: Any) -> None:
             super().__init__(**kwargs)
-            gemini_kwargs.update(kwargs)
+            nvidia_kwargs.update(kwargs)
 
     with (
         patch("agentix.drivers.adapters.intrinsic.huble.HubleChatDriver", _CapturingHuble),
-        patch("agentix.drivers.adapters.vendor.gemini.GeminiChatDriver", _CapturingGemini),
+        patch("agentix.drivers.adapters.vendor.nvidia.NvidiaChatDriver", _CapturingNvidia),
     ):
         build_drivers(cfg, model_override="hermes-4-405b")
     assert huble_kwargs["model"] == "hermes-4-405b"
-    assert gemini_kwargs["model"] == "gemini-2.0-flash"
+    assert nvidia_kwargs["model"] == "meta/llama-3.3-70b-instruct"
 
 
 # ── declared specs + extension seam ───────────────────────────────

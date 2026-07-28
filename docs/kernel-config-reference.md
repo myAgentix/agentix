@@ -13,7 +13,6 @@ at driver-construction time, mostly as fallbacks when the corresponding
 | `MELIOUS_API_KEY` | `drivers/factory.py` | Melious key when `melious.api_key` is unset. |
 | `LLMHUB_URL` | `drivers/adapters/huble.py` | HUBLE gateway URL fallback (`huble.base_url`). |
 | `LLMHUB_API_KEY` | `drivers/adapters/huble.py` | HUBLE key fallback (`huble.api_key`). |
-| `GEMINI_API_KEY` / `GOOGLE_API_KEY` | `drivers/adapters/vendor/gemini.py` | Gemini chat key (compat endpoint). |
 | `NVIDIA_API_KEY` | `drivers/adapters/vendor/nvidia.py` | NVIDIA NIM chat key. |
 | `HF_TOKEN` | `drivers/adapters/hf.py` | HuggingFace Inference API token (stt driver) when no `api_key`/`api_key_env` is declared. |
 

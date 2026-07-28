@@ -73,7 +73,7 @@ def _resolve_spec(provider: str, config_path: Path | None) -> object:
 
 @app.command("list")
 def model_list(
-    provider: Annotated[str | None, typer.Argument(help="Provider key, e.g. melious, gemini, ollama")] = None,
+    provider: Annotated[str | None, typer.Argument(help="Provider key, e.g. melious, nvidia")] = None,
     config_path: Path | None = typer.Option(None, "--config", help="Config file path"),
 ) -> None:
     """List the models a provider currently serves."""

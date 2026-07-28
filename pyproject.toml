@@ -22,7 +22,7 @@ minio      = ["minio>=7.2"]
 hf         = ["huggingface_hub>=0.24"]
 postgresql = ["asyncpg>=0.29"]
 
-# OpenAI-compatible wire (gemini, ollama, nvidia, melious). The `openai` SDK is
+# OpenAI-compatible wire (nvidia, melious). The `openai` SDK is
 # pulled in purely as the HTTP client for that wire format — the kernel ships no
 # first-party commercial provider driver. See docs/vendor-licenses.md for the
 # endpoint ToS each consumer accepts independently.

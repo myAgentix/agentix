@@ -59,20 +59,20 @@ error taxonomy with zero kernel change — modularity is the expandability mecha
 ### Shipped chat adapters
 
 **The kernel ships no first-party commercial provider driver.** Anthropic, OpenAI,
-Groq and Grok were removed in 0.6 — they are ordinary out-of-tree drivers now, supplied
-through seam #13 (§6). What ships is the **OpenAI-compatible wire** and the adapters
-that speak it, because that wire is a de-facto industry standard rather than one
-vendor's API.
+Groq and Grok were removed in 0.6, and Gemini and Ollama followed in 0.8 — they are
+ordinary out-of-tree drivers now, supplied through seam #13 (§6). What ships is the
+**OpenAI-compatible wire** and the two adapters that speak it, because that wire is a
+de-facto industry standard rather than one vendor's API. An endpoint-only provider needs
+no new code at all: point a `DriverSpec` dotted path at `OpenAIChatDriver` (or subclass it
+in ~15 lines to pin a default endpoint and model, as `NvidiaChatDriver` does).
 
 | Driver class | Factory key | Source | Notes |
 |---|---|---|---|
 | `OpenAIChatDriver` | — (base class) | `api` | `adapters/vendor/openai_compat.py`; the `/v1/chat/completions` wire. No provider identity: `api_key`, `base_url` and `model` are all required. Not registered as a factory key — subclass it or point a `DriverSpec` dotted path at it |
 | `MeliousChatDriver` | `"melious"` | `api` | Default chat driver; configured via `KernelConfig.melious` block + `MELIOUS_*` env |
-| `GeminiChatDriver` | `"gemini"` | `api` | Google's `.../v1beta/openai/` compat endpoint; key from `GEMINI_API_KEY`/`GOOGLE_API_KEY`; `tool_choice="any"` → `"required"` may be rejected, use `"auto"` |
-| `OllamaChatDriver` | `"ollama"` | `local` | Host's `<url>/v1`; `base_url` required; auth ignored; first local-SLM adapter for the OT direction ([`sync.md`](sync.md) §2) |
-| `NvidiaChatDriver` | `"nvidia"` | `api` | NVIDIA NIM endpoint |
+| `NvidiaChatDriver` | `"nvidia"` | `api` | NVIDIA NIM endpoint; key from `NVIDIA_API_KEY` |
 
-All four concrete adapters subclass `OpenAIChatDriver` and inherit tool serialisation,
+Both concrete adapters subclass `OpenAIChatDriver` and inherit tool serialisation,
 `usage` parsing and error classification for free. Pricing is deployment config, not
 per-model source (the `__unknown__` fallback in `cost_tracking.py` covers them;
 operators set real rates in `llm_pricing:`).
@@ -98,20 +98,22 @@ They need one opt-in extra — `pip install agentix[openai-compat]` — which pu
 
 ## 3. Embedding driver family (`drivers/embedding.py`)
 
-`EmbeddingDriver` protocol + `OpenAIEmbeddingDriver` / `HubleEmbeddingDriver`,
+`EmbeddingDriver` protocol + `HubleEmbeddingDriver` — the one shipped backend —
 fronted by `CachedEmbeddingDriver` over the SQLite `EmbeddingCache`
 (sha256(model‖text) keys — swapping backends can't return stale vectors). Cosine
 ranking is **not** a driver concept: `CosineIndex` lives in
 `agentix.storage.vector_index`. What gets embedded is the memory layer's decision
 ([`memory.md`](memory.md) §4).
 
-- **`OpenAIEmbeddingDriver`** (factory key `"openai-compat-embedding"`) — the
-  `/v1/embeddings` wire; `text-embedding-3-small` by default (1536 dims); re-uses the
-  `openai` SDK as the HTTP client. Carries no provider identity: `api_key` and
-  `base_url` are both required (no ambient env fallback).
 - **`HubleEmbeddingDriver`** (factory key `"huble-embedding"`) — POSTs to the HUBLE
   gateway (`{base_url}{embeddings_path}`; default path `/api/v2/embeddings`) with
-  OpenAI-shape body; 404 on the path → clear error directing to fallback or config.
+  OpenAI-shape body; 404 on the path → clear error directing to config or seam #13.
+- **Any other backend is out-of-tree** (seam #13, §6). The `/v1/embeddings` wire adapter
+  (`OpenAIEmbeddingDriver`, factory key `"openai-compat-embedding"`) was removed in 0.8:
+  implement `EmbeddingDriver` — one `async def embed(texts) -> list[EmbeddingResult]` —
+  and register it, or point a `DriverSpec` dotted path at your class. When no embedding
+  driver is declared, `registry.embedding_or_none()` returns `None` and semantic recall
+  is simply off; symbolic recall is unaffected.
 - `EmbeddingCache` — SQLite-backed, packed little-endian float32 blobs; async-safe
   (SQLite per-row locking). Parallel cache lookups via `asyncio.gather` before the
   upstream call; only misses are batched upstream.

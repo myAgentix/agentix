@@ -25,16 +25,16 @@ def test_model_list_happy_path(monkeypatch) -> None:
         return ["model-a", "model-b"]
 
     monkeypatch.setattr(model_cmd, "_fetch_models", _fake_fetch)
-    result = runner.invoke(root_app, ["model", "list", "gemini"])
+    result = runner.invoke(root_app, ["model", "list", "nvidia"])
     assert result.exit_code == 0
     assert "model-a" in result.output
-    assert "2 model(s) from gemini" in result.output
+    assert "2 model(s) from nvidia" in result.output
 
 
 def test_driver_providers_lists_chat_providers() -> None:
     result = runner.invoke(root_app, ["driver", "providers"])
     assert result.exit_code == 0
     assert "melious" in result.output
-    assert "gemini" in result.output
+    assert "nvidia" in result.output
     # 0.8: first-party commercial providers are out-of-tree (seam #13).
     assert "anthropic" not in result.output

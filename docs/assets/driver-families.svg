@@ -28,28 +28,27 @@
 <!-- Arrow protocol → adapters -->
 <line x1="232" y1="87" x2="250" y2="87" stroke="#546e7a" stroke-width="1.5" marker-end="url(#ah)"/>
 
-<!-- Adapter boxes — row 1: Melious, Gemini, Ollama -->
+<!-- Adapter boxes — row 1: Melious, Nvidia -->
 <rect x="254" y="58" width="118" height="26" rx="3" fill="#ffffff" stroke="#42a5f5" stroke-width="1"/>
 <text x="313" y="75" text-anchor="middle" font-size="10" fill="#1565c0">Melious</text>
 
 <rect x="380" y="58" width="118" height="26" rx="3" fill="#ffffff" stroke="#42a5f5" stroke-width="1"/>
-<text x="439" y="75" text-anchor="middle" font-size="10" fill="#1565c0">Gemini</text>
+<text x="439" y="75" text-anchor="middle" font-size="10" fill="#1565c0">Nvidia</text>
 
-<rect x="506" y="58" width="118" height="26" rx="3" fill="#ffffff" stroke="#42a5f5" stroke-width="1"/>
-<text x="565" y="75" text-anchor="middle" font-size="10" fill="#1565c0">Ollama</text>
-
-<!-- Adapter boxes — row 2: Huble, Nvidia, wire base -->
+<!-- Adapter boxes — row 2: Huble, wire base -->
 <rect x="254" y="90" width="118" height="26" rx="3" fill="#ffffff" stroke="#42a5f5" stroke-width="1"/>
 <text x="313" y="107" text-anchor="middle" font-size="10" fill="#1565c0">Huble</text>
 
 <rect x="380" y="90" width="118" height="26" rx="3" fill="#ffffff" stroke="#42a5f5" stroke-width="1"/>
-<text x="439" y="107" text-anchor="middle" font-size="10" fill="#1565c0">Nvidia</text>
+<text x="439" y="107" text-anchor="middle" font-size="9" fill="#1565c0">OpenAI-compat base</text>
 
-<rect x="506" y="90" width="118" height="26" rx="3" fill="#ffffff" stroke="#42a5f5" stroke-width="1"/>
-<text x="565" y="107" text-anchor="middle" font-size="9" fill="#1565c0">OpenAI-compat base</text>
+<!-- Out-of-tree seam — dashed: not shipped by the kernel -->
+<rect x="506" y="58" width="118" height="58" rx="3" fill="#ffffff" stroke="#90a4ae" stroke-width="1" stroke-dasharray="3 2"/>
+<text x="565" y="81" text-anchor="middle" font-size="9" fill="#546e7a">your driver</text>
+<text x="565" y="95" text-anchor="middle" font-size="8" fill="#78909c">seam #13</text>
 
 <!-- Note: OpenAI-compat subclasses -->
-<text x="254" y="126" font-size="9" fill="#1565c0" font-style="italic">All but Huble are thin subclasses of the OpenAI-compat wire base</text>
+<text x="254" y="126" font-size="9" fill="#1565c0" font-style="italic">Melious and Nvidia are thin subclasses of the OpenAI-compat wire base</text>
 
 <!-- Wrappers column -->
 <rect x="636" y="58" width="306" height="26" rx="3" fill="#bbdefb" stroke="#42a5f5" stroke-width="1"/>
@@ -76,12 +75,12 @@
 <!-- Arrow -->
 <line x1="232" y1="215" x2="250" y2="215" stroke="#546e7a" stroke-width="1.5" marker-end="url(#ah)"/>
 
-<!-- Adapters: OpenAI-compat, Huble -->
+<!-- Adapters: Huble (the one shipped backend) + the out-of-tree seam -->
 <rect x="254" y="202" width="118" height="26" rx="3" fill="#ffffff" stroke="#ab47bc" stroke-width="1"/>
-<text x="313" y="219" text-anchor="middle" font-size="9" fill="#6a1b9a">OpenAI-compat</text>
+<text x="313" y="219" text-anchor="middle" font-size="10" fill="#6a1b9a">Huble</text>
 
-<rect x="380" y="202" width="118" height="26" rx="3" fill="#ffffff" stroke="#ab47bc" stroke-width="1"/>
-<text x="439" y="219" text-anchor="middle" font-size="10" fill="#6a1b9a">Huble</text>
+<rect x="380" y="202" width="118" height="26" rx="3" fill="#ffffff" stroke="#90a4ae" stroke-width="1" stroke-dasharray="3 2"/>
+<text x="439" y="219" text-anchor="middle" font-size="9" fill="#546e7a">your driver — seam #13</text>
 
 <!-- Cache wrapper -->
 <rect x="510" y="202" width="248" height="26" rx="3" fill="#e1bee7" stroke="#ab47bc" stroke-width="1"/>
