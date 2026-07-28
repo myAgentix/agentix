@@ -46,6 +46,10 @@ class KernelState:
     # Callable[[KernelState, Session, app_meta | None], Engine] | None
     # Set by a plugin's register() to build a per-session Engine with app-specific middleware.
     _session_engine_factory: Any = None
+    # Optional async readiness probe set by a plugin's register(): awaitable
+    # returning dict[str, bool] of per-dependency health, e.g. {"object_store": True}.
+    # Merged into GET /health/ready. Callable[[KernelState], Awaitable[dict[str, bool]]] | None.
+    _readiness_hook: Any = None
     # Skill catalog — rebuilt from skill_roots on POST /admin/skills/reload
     skill_catalog: Any = None  # SkillCatalog | None
     skill_roots: list[str] = field(default_factory=list)
