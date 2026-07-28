@@ -125,6 +125,22 @@ class OpenAIChatDriver:
             raw={"id": response.id},
         )
 
+    async def list_models(self) -> list[str]:
+        # GET /v1/models on the OpenAI-compatible endpoint. Same error mapping
+        # as complete() so callers get the canonical taxonomy. Inherited by all
+        # OpenAI-compatible subclasses (Melious, Grok, Gemini, NVIDIA, Ollama).
+        try:
+            resp = await self._client.models.list()
+        except openai.RateLimitError as e:
+            raise DriverRateLimited(str(e), driver=self.name) from e
+        except openai.APIStatusError as e:
+            if e.status_code and e.status_code >= 500:
+                raise DriverUnavailable(str(e), driver=self.name) from e
+            raise DriverInvalidRequest(str(e), driver=self.name) from e
+        except (openai.APIConnectionError, openai.APITimeoutError) as e:
+            raise DriverUnavailable(str(e), driver=self.name) from e
+        return sorted(m.id for m in resp.data)
+
     async def aclose(self) -> None:
         await self._client.close()
 

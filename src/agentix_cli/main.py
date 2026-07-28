@@ -10,7 +10,19 @@ from rich.console import Console
 import agentix_cli
 from agentix_cli._config import load_config
 from agentix_cli._output import make_table, print_kv, print_table, warn
-from agentix_cli.commands import agent, config_cmd, context, daemon, driver, memory, scaffold, session, skill, tool
+from agentix_cli.commands import (
+    agent,
+    config_cmd,
+    context,
+    daemon,
+    driver,
+    memory,
+    model,
+    scaffold,
+    session,
+    skill,
+    tool,
+)
 
 app = typer.Typer(
     name="agentix",
@@ -20,7 +32,8 @@ app = typer.Typer(
 )
 
 # Register subcommand groups
-app.add_typer(driver.app, name="driver", help="Manage drivers (list, show, install, uninstall).")
+app.add_typer(driver.app, name="driver", help="Manage drivers (list, providers, show, install, load).")
+app.add_typer(model.app, name="model", help="List models available from a provider.")
 app.add_typer(session.app, name="session", help="Inspect sessions stored in the SQLite kernel database.")
 app.add_typer(tool.app, name="tool", help="List and inspect registered tools.")
 app.add_typer(skill.app, name="skill", help="List and inspect skills from the catalog.")

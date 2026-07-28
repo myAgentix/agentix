@@ -210,6 +210,19 @@ class AnthropicChatDriver:
 
         return _from_anthropic_response(response, model)
 
+    async def list_models(self) -> list[str]:
+        try:
+            resp = await self._client.models.list()
+        except anthropic.RateLimitError as e:
+            raise DriverRateLimited(str(e), driver=self.name) from e
+        except anthropic.APIStatusError as e:
+            if e.status_code and e.status_code >= 500:
+                raise DriverUnavailable(str(e), driver=self.name) from e
+            raise DriverInvalidRequest(str(e), driver=self.name) from e
+        except (anthropic.APIConnectionError, anthropic.APITimeoutError) as e:
+            raise DriverUnavailable(str(e), driver=self.name) from e
+        return sorted(m.id for m in resp.data)
+
     async def aclose(self) -> None:
         await self._client.close()
 
