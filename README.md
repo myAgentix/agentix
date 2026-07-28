@@ -341,9 +341,10 @@ as a package exposing `<pkg>.plugin:register` that passes `enforce_plugin_compli
 - Messages are an opaque list the engine snapshots per turn.
 - The innermost dispatch is a `TurnDispatcher` protocol, so tests swap in fakes without
   touching the chain.
-- The driver layer underneath (descriptor/registry, chat adapters incl. OAuth token
-  sources, failover chain): [`docs/drivers.md`](docs/drivers.md); which model serves a
-  request (chain order, failover, routing direction): [`docs/routing.md`](docs/routing.md).
+- **Making LLM calls** (get a driver, `ChatRequest`, target a model, failover) —
+  [`docs/llm.md`](docs/llm.md); the driver layer underneath for *authoring* drivers
+  (descriptor/registry, chat adapters incl. OAuth token sources): [`docs/drivers.md`](docs/drivers.md);
+  which model serves a request (routing-policy direction): [`docs/routing.md`](docs/routing.md).
 - Detail: [`docs/engine.md`](docs/engine.md) (run_turn contract, middleware order, the nine layers).
 
 ### Async and sync operation

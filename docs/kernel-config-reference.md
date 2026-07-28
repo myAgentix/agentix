@@ -28,17 +28,10 @@ predicate can't drift.
 
 ## The `drivers:` block — canonical driver declaration
 
-`KernelConfig.drivers: tuple[DriverSpec, ...]`. Each `DriverSpec`:
-
-| Field | Meaning |
-|---|---|
-| `name` | Registry instance name (unique). |
-| `driver` | Builtin factory key (`melious`, `huble`, `gemini`, `ollama`, `nvidia`, `openai-compat-embedding`, `huble-embedding`, `hf-stt`, `minio-object-store`, `sqlite-relational`, `local-file-store`) or a dotted path `pkg.mod:Class` (seam #13, [`drivers.md`](drivers.md) §6). |
-| `type` / `modality` | `model` + chat\|embedding\|stt today; open vocabulary for future types (`database`, …). |
-| `model`, `base_url` | Instance settings; adapter defaults apply when unset. |
-| `api_key_env` | **The env-var NAME holding the credential — never the secret itself** (12-factor). |
-| `default` | Marks the default instance for its modality (else first-declared wins). |
-| `options` | Adapter-specific passthrough (hashable key/value pairs). |
+`KernelConfig.drivers: tuple[DriverSpec, ...]`. The `DriverSpec` field table is canonical
+in [`drivers.md`](drivers.md) §6 (`name`, `driver` = factory key or dotted path, `type`/
+`modality`, `model`, `base_url`, `api_key_env` = the env-var **name** not the secret,
+`default`, `scope`, `options`); to *call* a configured model see [`llm.md`](llm.md).
 
 **Empty `drivers:` is valid and the default**: `derive_driver_specs` maps the legacy
 `huble:` / `melious:` blocks onto specs, so existing operator YAML

@@ -135,7 +135,7 @@ each, with its SSoT:
 - [`drivers.md`](drivers.md) — `ChatDriver.complete` is the one async method everything
   speaks; adapters await the provider SDKs directly, and the capacity semaphore
   (§4) bounds how many are in flight per process.
-- [`routing.md`](routing.md) — failover is a sequential `await` chain: try one
+- [`llm.md`](llm.md) — failover is a sequential `await` chain: try one
   provider, classify the error, await the next; the async `FailoverCallback`
   notifies operators without blocking dispatch.
 - [`isolation.md`](isolation.md) — the invariants I1–I7 are exactly the rules
