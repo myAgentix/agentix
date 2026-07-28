@@ -20,17 +20,19 @@ if TYPE_CHECKING:
     from types import ModuleType
 
 # Kernel-owned class names — integration drivers must not redefine these concepts.
-_SHADOW_FORBIDDEN: frozenset[str] = frozenset({
-    "Session",
-    "Turn",
-    "WorkingMemory",
-    "ToolContext",
-    "ToolRegistry",
-    "SkillCatalog",
-    "Dispatcher",
-    "KernelState",
-    "MemoryRegistry",
-})
+_SHADOW_FORBIDDEN: frozenset[str] = frozenset(
+    {
+        "Session",
+        "Turn",
+        "WorkingMemory",
+        "ToolContext",
+        "ToolRegistry",
+        "SkillCatalog",
+        "Dispatcher",
+        "KernelState",
+        "MemoryRegistry",
+    }
+)
 
 # Private kernel sub-module roots (underscore-prefixed segments are internal).
 _PRIVATE_ROOTS: tuple[str, ...] = (
@@ -39,11 +41,13 @@ _PRIVATE_ROOTS: tuple[str, ...] = (
 )
 
 # Specific modules under private roots that are part of the public API.
-_ALLOWED_PRIVATE: frozenset[str] = frozenset({
-    "agentix.storage.memory",
-    "agentix.storage.registry",
-    "agentix.core.middleware",
-})
+_ALLOWED_PRIVATE: frozenset[str] = frozenset(
+    {
+        "agentix.storage.memory",
+        "agentix.storage.registry",
+        "agentix.core.middleware",
+    }
+)
 
 
 @dataclass
@@ -105,9 +109,7 @@ class DriverComplianceChecker:
         detail: str,
         severity: Literal["error", "warning"] = "error",
     ) -> None:
-        self._violations.append(
-            ComplianceViolation(rule=rule, file=file, line=line, detail=detail, severity=severity)
-        )
+        self._violations.append(ComplianceViolation(rule=rule, file=file, line=line, detail=detail, severity=severity))
 
     # ── Check 1: no shadow kernel classes ─────────────────────────────────
 
@@ -128,9 +130,7 @@ class DriverComplianceChecker:
         # If the file imports anything from agentix.tools, it's using the
         # kernel tool surface — no further check needed.
         has_tool_import = any(
-            isinstance(n, ast.ImportFrom)
-            and n.module is not None
-            and n.module.startswith("agentix.tools")
+            isinstance(n, ast.ImportFrom) and n.module is not None and n.module.startswith("agentix.tools")
             for n in ast.walk(tree)
         )
         if has_tool_import:
@@ -168,9 +168,7 @@ class DriverComplianceChecker:
             )
             if is_open:
                 mode_arg = node.args[1] if len(node.args) > 1 else None
-                mode_kw = next(
-                    (kw.value for kw in node.keywords if kw.arg == "mode"), None
-                )
+                mode_kw = next((kw.value for kw in node.keywords if kw.arg == "mode"), None)
                 for mode_node in filter(None, [mode_arg, mode_kw]):
                     if (
                         isinstance(mode_node, ast.Constant)
@@ -181,8 +179,7 @@ class DriverComplianceChecker:
                             "memory-raw-file-write",
                             rel,
                             node.lineno,
-                            "raw open() write in a memory module — "
-                            "use MemoryStore.write_section() instead",
+                            "raw open() write in a memory module — use MemoryStore.write_section() instead",
                         )
             # Path(...).write_text(...)
             if isinstance(func, ast.Attribute) and func.attr == "write_text":
@@ -190,8 +187,7 @@ class DriverComplianceChecker:
                     "memory-raw-file-write",
                     rel,
                     node.lineno,
-                    "write_text() in a memory module — "
-                    "use MemoryStore.write_section() instead",
+                    "write_text() in a memory module — use MemoryStore.write_section() instead",
                 )
 
     # ── Check 4: no private kernel internals imported ─────────────────────
@@ -221,8 +217,7 @@ class DriverComplianceChecker:
                                 "private-kernel-import",
                                 rel,
                                 node.lineno,
-                                f"imports private kernel module {alias.name!r} — "
-                                "use the public API only",
+                                f"imports private kernel module {alias.name!r} — use the public API only",
                             )
 
     # ── Check 5: skills are markdown ──────────────────────────────────────
@@ -297,7 +292,6 @@ class DriverComplianceChecker:
                 "plugin.py does not define register(state, tool_registry) at module level — "
                 "agentixd will crash with AttributeError when loading this plugin",
             )
-
 
 
 def check_driver_compliance(src_root: Path) -> list[ComplianceViolation]:

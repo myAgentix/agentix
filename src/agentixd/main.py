@@ -89,8 +89,10 @@ app = create_app()
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 
+
 def _resolve_socket(cfg_path: Path) -> Path:
     from agentixd._config import _DEFAULT_SOCKET
+
     env = os.environ.get("AGENTIXD_SOCKET")
     if env:
         return Path(env)
@@ -117,6 +119,7 @@ def _tee_to_log_file(log_path: Path) -> None:
     without needing to reconfigure structlog's PrintLoggerFactory.
     """
     import sys
+
     log_path.parent.mkdir(parents=True, exist_ok=True)
     log_path.touch(mode=0o600, exist_ok=True)
     os.chmod(str(log_path), 0o600)

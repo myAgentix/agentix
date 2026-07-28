@@ -78,9 +78,7 @@ async def create_session(body: CreateSessionRequest, request: Request) -> dict[s
     # Build a per-session engine if the plugin registered a factory (e.g. ludo middleware chain).
     if kernel._session_engine_factory is not None:
         try:
-            kernel._session_engines[session.id] = kernel._session_engine_factory(
-                kernel, session, body.app_meta
-            )
+            kernel._session_engines[session.id] = kernel._session_engine_factory(kernel, session, body.app_meta)
         except Exception as exc:
             log.warning("session engine factory failed — using global engine", session_id=session.id, error=str(exc))
 

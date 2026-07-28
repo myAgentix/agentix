@@ -207,9 +207,7 @@ async def memory_search(params: MemorySearchInput, ctx: ToolContext) -> MemorySe
         path = entry.get("path", "")
         try:
             page = await store.read_page(path)
-            full_text = page.preamble + "\n".join(
-                f"## {h}\n{b}" for h, b in page.sections.items()
-            )
+            full_text = page.preamble + "\n".join(f"## {h}\n{b}" for h, b in page.sections.items())
         except Exception:
             continue
         m = pattern.search(full_text)
@@ -260,9 +258,7 @@ class MemoryRegistryListOutput(BaseModel):
     ),
     mutates_target=False,
 )
-async def memory_registry_list(
-    params: MemoryRegistryListInput, ctx: ToolContext
-) -> MemoryRegistryListOutput:
+async def memory_registry_list(params: MemoryRegistryListInput, ctx: ToolContext) -> MemoryRegistryListOutput:
     started = time.perf_counter_ns()
     store = ctx.memory
     await store.registry.load()

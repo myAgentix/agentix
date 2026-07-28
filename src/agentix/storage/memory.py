@@ -119,6 +119,7 @@ class MemoryStore:
         """
         if not hasattr(self, "_registry"):
             from agentix.storage.registry import MemoryRegistry
+
             self._registry: MemoryRegistry = MemoryRegistry(self._driver)
         return self._registry
 

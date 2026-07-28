@@ -48,7 +48,7 @@ class MemoryRegistry:
 
     def __init__(self, driver: FileStoreDriver) -> None:
         self._driver = driver
-        self._index: dict[str, str] = {}         # slug → path
+        self._index: dict[str, str] = {}  # slug → path
         self._meta: dict[str, dict[str, Any]] = {}  # slug → full entry
         self._loaded = False
         self._mu = asyncio.Lock()

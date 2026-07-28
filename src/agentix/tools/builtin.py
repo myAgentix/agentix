@@ -52,8 +52,16 @@ def try_register_kernel_tools(registry: ToolRegistry) -> None:
     genuine conflicts elsewhere.
     """
     for t in (
-        ReadFile(), GlobFiles(), GrepFiles(), WebFetch(), WriteToFs(), record_attempt,
-        memory_store, memory_recall, memory_search, memory_registry_list,
+        ReadFile(),
+        GlobFiles(),
+        GrepFiles(),
+        WebFetch(),
+        WriteToFs(),
+        record_attempt,
+        memory_store,
+        memory_recall,
+        memory_search,
+        memory_registry_list,
     ):
         registry.try_register(t)
 

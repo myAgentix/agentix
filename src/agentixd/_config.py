@@ -77,7 +77,9 @@ def load_daemon_config(path: Path | None = None) -> DaemonConfig:
         minio_endpoint=_menv("endpoint"),
         minio_access_key=_menv("access_key"),
         minio_secret_key=_menv("secret_key"),
-        minio_bucket=minio_block.get("bucket") or os.environ.get("MINIO_BUCKET") or os.environ.get("LUDO_MINIO_BUCKET", "agentix"),
+        minio_bucket=minio_block.get("bucket")
+        or os.environ.get("MINIO_BUCKET")
+        or os.environ.get("LUDO_MINIO_BUCKET", "agentix"),
         driver_specs=raw.get("drivers", []),
         plugin_packages=raw.get("plugin_packages", []),
         budget_usd=float(raw.get("budget_usd", 200.0)),
