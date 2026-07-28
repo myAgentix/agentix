@@ -79,8 +79,8 @@ class DriverSpec:
 
     ``driver`` selects HOW to build: a builtin factory key registered via
     ``agentix.drivers.factory.register_driver_factory`` (``"huble"``,
-    ``"melious"``, ``"gemini"``, ``"openai-compat-embedding"``,
-    ``"huble-embedding"``, ``"hf-stt"``, …) or a dotted path ``"pkg.mod:Class"`` for
+    ``"melious"``, ``"nvidia"``, ``"huble-embedding"``, ``"hf-stt"``, …)
+    or a dotted path ``"pkg.mod:Class"`` for
     developer-supplied driver classes (seam #13).
 
     ``api_key_env`` names the ENVIRONMENT VARIABLE holding the credential —
@@ -206,8 +206,8 @@ def derive_driver_specs(cfg: KernelConfig) -> tuple[DriverSpec, ...]:
                 default=True,
             )
         )
-    # No embedding fallback: the kernel ships no ambient-credential embedding
-    # backend. Declare one explicitly in ``drivers:`` (e.g. driver
-    # ``openai-compat-embedding`` with base_url + api_key_env) when needed —
-    # callers read ``registry.embedding_or_none()``.
+    # No embedding fallback: ``huble-embedding`` above is the only shipped
+    # backend. Any other is an out-of-tree driver (seam #13) declared explicitly
+    # in ``drivers:`` with its own factory key or dotted path — callers read
+    # ``registry.embedding_or_none()``, which returns None when none is declared.
     return tuple(specs)

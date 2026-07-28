@@ -68,10 +68,10 @@ def test_melious_inherits_list_models() -> None:
     assert asyncio.run(d.list_models()) == ["deepseek-v4-flash"]
 
 
-def test_gemini_inherits_list_models() -> None:
+def test_nvidia_inherits_list_models() -> None:
     """Every shipped chat adapter is an OpenAI-compat subclass, so all inherit it."""
-    from agentix.drivers.adapters.vendor.gemini import GeminiChatDriver
+    from agentix.drivers.adapters.vendor.nvidia import NvidiaChatDriver
 
-    d = GeminiChatDriver(api_key="k")
-    d._client = _FakeClient(ids=["gemini-2.0-flash"])  # type: ignore[assignment]
-    assert asyncio.run(d.list_models()) == ["gemini-2.0-flash"]
+    d = NvidiaChatDriver(api_key="k")
+    d._client = _FakeClient(ids=["meta/llama-3.3-70b-instruct"])  # type: ignore[assignment]
+    assert asyncio.run(d.list_models()) == ["meta/llama-3.3-70b-instruct"]

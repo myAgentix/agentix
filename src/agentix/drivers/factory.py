@@ -79,22 +79,6 @@ def _env_key(spec: DriverSpec) -> str | None:
 # ── OpenAI-compatible-wire factories (ImportError → clear install hint) ───────
 
 
-def _build_gemini(spec: DriverSpec, cfg: KernelConfig) -> Driver:
-    try:
-        from agentix.drivers.adapters.vendor.gemini import GeminiChatDriver
-    except ImportError as exc:
-        raise RuntimeError("Install agentix[openai-compat] to use the Gemini driver") from exc
-    return GeminiChatDriver(api_key=_env_key(spec), model=spec.model, base_url=spec.base_url or None)
-
-
-def _build_ollama(spec: DriverSpec, cfg: KernelConfig) -> Driver:
-    try:
-        from agentix.drivers.adapters.vendor.ollama import OllamaChatDriver
-    except ImportError as exc:
-        raise RuntimeError("Install agentix[openai-compat] to use the Ollama driver") from exc
-    return OllamaChatDriver(api_key=_env_key(spec), model=spec.model, base_url=spec.base_url or None)
-
-
 def _build_nvidia(spec: DriverSpec, cfg: KernelConfig) -> Driver:
     try:
         from agentix.drivers.adapters.vendor.nvidia import NvidiaChatDriver
@@ -129,17 +113,6 @@ def _build_huble(spec: DriverSpec, cfg: KernelConfig) -> Driver:
         upstream_provider=pc.upstream_provider,
         model=spec.model or pc.model,
     )
-
-
-def _build_openai_compat_embedding(spec: DriverSpec, cfg: KernelConfig) -> Driver:
-    try:
-        from agentix.drivers.embedding import OpenAIEmbeddingDriver
-    except ImportError as exc:
-        raise RuntimeError("Install agentix[openai-compat] to use OpenAI-compatible embeddings") from exc
-    kwargs: dict[str, str] = {}
-    if spec.model:
-        kwargs["model"] = spec.model
-    return OpenAIEmbeddingDriver(api_key=_env_key(spec), base_url=spec.base_url, **kwargs)
 
 
 def _build_hf_stt(spec: DriverSpec, cfg: KernelConfig) -> Driver:
@@ -197,11 +170,8 @@ def _build_huble_embedding(spec: DriverSpec, cfg: KernelConfig) -> Driver:
 
 for _key, _factory in (
     # vendor — require opt-in extra; consumer accepts provider ToS
-    ("gemini", _build_gemini),
-    ("ollama", _build_ollama),
     ("nvidia", _build_nvidia),
     ("melious", _build_melious),
-    ("openai-compat-embedding", _build_openai_compat_embedding),
     # intrinsic — ship with kernel, open-source deps only
     ("huble", _build_huble),
     ("huble-embedding", _build_huble_embedding),

@@ -1,6 +1,31 @@
 # Changelog
 
-## 0.8.0 — vendor-driver purge: anthropic, openai, groq, grok removed (BREAKING)
+## 0.8.0 — vendor-driver purge (BREAKING)
+
+Six shipped provider drivers removed. What remains is the **wire**, not the vendors:
+`OpenAIChatDriver` as the neutral `/v1/chat/completions` base, two thin subclasses
+(`melious`, `nvidia`) and the `huble` gateway. Everything else is out-of-tree via
+seam #13.
+
+### Second pass — gemini, ollama, openai-compat-embedding removed
+
+- **Removed** `GeminiChatDriver` (`adapters/vendor/gemini.py`) and `OllamaChatDriver`
+  (`adapters/vendor/ollama.py`). Factory keys `"gemini"` and `"ollama"` no longer
+  resolve, and `GEMINI_API_KEY` / `GOOGLE_API_KEY` are no longer read by the kernel.
+  Both were endpoint + default-model configuration over `OpenAIChatDriver` and carry no
+  logic worth shipping: point a `DriverSpec` dotted path straight at `OpenAIChatDriver`
+  with your `base_url`, `model` and `api_key_env`, or subclass it in ~15 lines.
+- **Removed** `OpenAIEmbeddingDriver` and its factory key `"openai-compat-embedding"`.
+  `HubleEmbeddingDriver` (`"huble-embedding"`) is now the **only shipped embedding
+  backend**; any other implements the `EmbeddingDriver` protocol out-of-tree. With no
+  embedding driver declared, `registry.embedding_or_none()` returns `None` and semantic
+  recall is off — symbolic recall is unaffected.
+- `agentix driver` / `agentixd` catalogues and `agentix model list` drop all three keys;
+  the CLI's dead `base_url_required` provider flag (only ever set by `ollama`) goes with
+  them. The `[openai-compat]` extra **stays** — the surviving adapters still need the
+  `openai` SDK as their HTTP client.
+
+### First pass — anthropic, openai, groq, grok removed
 
 - **Removed** `AnthropicChatDriver`, `OpenAIChatDriver`-as-a-provider, `GroqChatDriver`
   and `GrokChatDriver`, plus the Anthropic-only auth subsystem
@@ -13,10 +38,9 @@
   the name `OpenAIChatDriver` because it models the `/v1/chat/completions` **wire**, not
   a provider: no default model, no default endpoint, no `OPENAI_API_KEY` fallback —
   `api_key`, `base_url` and `model` are all required. It is no longer a registered
-  factory key. `gemini`/`ollama`/`nvidia`/`melious` still subclass it, unchanged.
-- `OpenAIEmbeddingDriver` neutralised the same way; factory key
-  `"openai-embedding"` → **`"openai-compat-embedding"`**; `api_key` + `base_url` now
-  required.
+  factory key. `nvidia`/`melious` subclass it, unchanged.
+- `OpenAIEmbeddingDriver` was neutralised the same way (`"openai-embedding"` →
+  `"openai-compat-embedding"`) before being removed outright in the second pass above.
 - **Config (BREAKING)**: `AnthropicConfig` and `KernelConfig.anthropic` deleted, as is
   `config.anthropic_active()`. `_PROVIDER_PRIORITY` is now `("melious", "huble")`;
   `select_enabled_provider` and `derive_driver_specs` fall back to **melious**.

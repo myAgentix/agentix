@@ -29,7 +29,6 @@ from agentix.drivers.embedding import (
     EmbeddingError,
     EmbeddingResult,
     HubleEmbeddingDriver,
-    OpenAIEmbeddingDriver,
 )
 from agentix.drivers.factory import (
     build_drivers,
@@ -91,7 +90,6 @@ __all__ = [
     "NoDriversAvailable",
     "ObjectNotFound",
     "ObjectStoreDriver",
-    "OpenAIEmbeddingDriver",
     "RelationalDriver",
     "SttDriver",
     "ToolSpec",

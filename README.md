@@ -64,7 +64,7 @@ and appends any `AGENTIX_EXTRAS` on top):
 | `minio` | MinIO object store | Apache 2.0 |
 | `postgresql` | PostgreSQL driver | MIT (asyncpg) |
 | `hf` | HuggingFace hub SDK | Apache 2.0 |
-| `openai-compat` | Melious / Gemini / Ollama / NVIDIA chat + embeddings | Requires an OpenAI-compatible endpoint key + its ToS |
+| `openai-compat` | Melious / NVIDIA chat (the `/v1/chat/completions` wire) | Requires an OpenAI-compatible endpoint key + its ToS |
 | `all-intrinsic` | minio + postgresql + hf | |
 | `all` | Everything | |
 
