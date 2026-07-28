@@ -46,7 +46,7 @@ The questions to settle before committing an OT profile, worked here first:
     gate ([`async.md`](async.md) §6) matters more;
   - routing when local SLM and cloud LLM are both active — routine turns local,
     escalation to a big model as a *policy* decision
-    ([`routing.md`](routing.md) §4–5 is exactly this seam);
+    ([`routing.md`](routing.md) §3 is exactly this seam);
   - determinism knobs — pinned model version, temperature 0, replayable
     trajectories — as an "OT profile" of config, not new code.
 - **Failure semantics on the shop floor** — what a `paused` session means when

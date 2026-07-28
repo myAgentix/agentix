@@ -4,12 +4,15 @@
 
 ![Driver families — Chat, Embedding, STT, Storage](assets/driver-families.svg)
 
-**Single source of truth for the driver framework in `docs/`.** Sections 1–8 document
+**Single source of truth for the driver framework in `docs/`.** This doc is for
+**authoring** drivers. To *call* a model as an app/agent programmer (get a driver, build a
+`ChatRequest`, target a model, handle failover) → [`llm.md`](llm.md). Sections 1–8 document
 the landed subsystem (code: `src/agentix/drivers/`); section 9 is **DIRECTION**.
-Neighbouring SSoTs are referenced, never restated (CRIE rule): which model serves a
-request — chain order and the routing-policy direction — is [`routing.md`](routing.md);
-cost recording and the money budget are [`budgets.md`](budgets.md); the capacity
-limiter's isolation invariant is [`isolation.md`](isolation.md) §3 I5.
+Neighbouring SSoTs are referenced, never restated (CRIE rule): calling a model is
+[`llm.md`](llm.md); which model serves a request — the routing-policy direction — is
+[`routing.md`](routing.md); cost recording and the money budget are
+[`budgets.md`](budgets.md); the capacity limiter's isolation invariant is
+[`isolation.md`](isolation.md) §3 I5.
 
 **A driver is the kernel's first-class unit of external-system I/O** — modular and
 developer-programmable. The first family is AI models of any modality (chat,
@@ -88,7 +91,7 @@ They need one opt-in extra — `pip install agentix[openai-compat]` — which pu
 
 - `ChatFailoverChain` (`drivers/router.py`, ex-`ProviderRouter`) — ordered
   first-success failover, itself `ChatDriver`-compatible; semantics canonical in
-  [`routing.md`](routing.md) §2.
+  [`llm.md`](llm.md) §4.
 - `CostRecordingChatDriver` (`drivers/cost.py`) — the chat cost decorator; recording
   semantics canonical in [`budgets.md`](budgets.md) §3.
 - The dispatcher consumes a `ChatDriver` (constructor kwarg `driver=`).
@@ -330,7 +333,7 @@ is new — defined beside the driver, not in the kernel.
 ## 9. DIRECTION
 
 - **Routing policy over drivers** — cost-aware/capability-aware candidate ordering,
-  escalation tiers, health breakers: [`routing.md`](routing.md) §4/§6–7 (none of it
+  escalation tiers, health breakers: [`routing.md`](routing.md) §1/§3–4 (none of it
   landed in v0.5 — the registry default is a lookup, never a choice).
 - **Non-chat cost recording** — unit-pricing schema (per-second stt, per-text
   embedding) + a type-agnostic `CostRecordingDriver` keyed on `pricing_ref`
