@@ -1,6 +1,6 @@
 # Claude local config / runtime
-.claude/settings.local.json
-.claude/scheduled_tasks.lock
+.claude/
+./CLAUDE.md
 
 # Secrets & generated SQL
 .env
