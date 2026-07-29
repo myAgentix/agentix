@@ -77,6 +77,15 @@ class LocalObjectStoreDriver:
         self.root = Path(root).resolve()
         self._name = name
 
+    def for_namespace(self, namespace: str) -> LocalObjectStoreDriver:
+        """A sibling rooted at a per-tenant subdirectory (``<root>/<namespace>``) —
+        the local-fs analogue of the MinIO ``<base>-<namespace>`` bucket, so the
+        registry's namespace seam works with the offline checkpoint fallback too."""
+        import re
+
+        frag = re.sub(r"[^a-z0-9-]+", "-", namespace.lower()).strip("-")
+        return LocalObjectStoreDriver(self.root / frag, name=f"{self._name}:{frag}")
+
     @property
     def descriptor(self) -> DriverDescriptor:
         return DriverDescriptor(
