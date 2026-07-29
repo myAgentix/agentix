@@ -116,9 +116,13 @@ class KernelConfig:
     """
 
     config_path: Path
-    minio: MinioConfig
     sqlite_path: Path
     memory_path: Path
+    # Optional: the object-store connection is owned by the kernel/infra. When a
+    # consumer declares no ``type="storage"`` driver, ``build_drivers`` auto-registers
+    # a MinIO object-store from ``MINIO_*`` / ``LUDO_MINIO_*`` env, so apps need not
+    # carry any storage settings. Kept for the daemon's explicit construction path.
+    minio: MinioConfig | None = None
     huble: HubleConfig = HubleConfig()
     melious: MeliousConfig = MeliousConfig()
     budget_usd: float = 200.0

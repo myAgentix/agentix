@@ -95,6 +95,17 @@ class MinioObjectStoreDriver:
             region=config.region,
         )
 
+    def for_namespace(self, namespace: str) -> MinioObjectStoreDriver:
+        """A sibling driver scoped to the ``<base>-<namespace>`` bucket, reusing this
+        connection. The kernel composes the physical bucket (S3-sanitized) so a
+        consumer isolates a tenant with a token only — never a connection or bucket."""
+        import re
+        from dataclasses import replace
+
+        frag = re.sub(r"[^a-z0-9-]+", "-", namespace.lower()).strip("-")
+        scoped = replace(self.config, bucket=f"{self.config.bucket}-{frag}")
+        return MinioObjectStoreDriver(scoped, name=f"{self._name}:{frag}")
+
     @property
     def descriptor(self) -> DriverDescriptor:
         return DriverDescriptor(

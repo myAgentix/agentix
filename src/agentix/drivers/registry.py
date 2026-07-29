@@ -79,6 +79,8 @@ class DriverRegistry:
         self._leasables: dict[str, Callable[[Mapping[str, object]], Driver]] = {}
         # Open leases keyed by the session id bound at lease time (None = unbound).
         self._active_leases: dict[str | None, list[Driver]] = {}
+        # (base object-store name, namespace) -> bucket-scoped driver (memoized).
+        self._scoped_object_stores: dict[tuple[str, str], ObjectStoreDriver] = {}
 
     # ── registration ──────────────────────────────────────────────
 
@@ -205,11 +207,26 @@ class DriverRegistry:
             raise TypeError(f"driver {driver.descriptor.name!r} is not a RelationalDriver")
         return cast("RelationalDriver", driver)
 
-    def object_store(self, name: str | None = None) -> ObjectStoreDriver:
-        """The default (or named) object-store driver; raises when absent."""
+    def object_store(self, name: str | None = None, *, namespace: str | None = None) -> ObjectStoreDriver:
+        """The default (or named) object-store driver; raises when absent.
+
+        ``namespace`` returns a driver scoped to a per-tenant bucket the driver
+        composes from its own connection (``<base>-<namespace>``) — the kernel owns
+        the physical bucket name, so a consumer isolates a customer by passing only a
+        token, never a connection or bucket string. Memoized per (driver, namespace)."""
         driver = self._default_for("storage", "object", name)
         if not hasattr(driver, "put_bytes"):
             raise TypeError(f"driver {driver.descriptor.name!r} is not an ObjectStoreDriver")
+        if namespace:
+            key = (driver.descriptor.name, namespace)
+            scoped = self._scoped_object_stores.get(key)
+            if scoped is None:
+                for_namespace = getattr(driver, "for_namespace", None)
+                if for_namespace is None:
+                    raise TypeError(f"object-store driver {driver.descriptor.name!r} does not support namespaces")
+                scoped = for_namespace(namespace)
+                self._scoped_object_stores[key] = scoped
+            return cast("ObjectStoreDriver", scoped)
         return cast("ObjectStoreDriver", driver)
 
     def object_store_or_none(self, name: str | None = None) -> ObjectStoreDriver | None:

@@ -132,6 +132,32 @@ def _build_minio_object_store(spec: DriverSpec, cfg: KernelConfig) -> Driver:
     return MinioObjectStoreDriver(spec=spec, api_key=_env_key(spec))
 
 
+def _env_minio_object_store() -> Driver | None:
+    """Build a MinIO object-store driver from the canonical ``MINIO_*`` env — the
+    kernel owns the object-store connection so consumers declare no storage settings.
+    Returns None when the endpoint/credentials are absent (no object store configured).
+    App-specific env aliases (deployment concern) are mapped to ``MINIO_*`` upstream."""
+
+    def _menv(key: str) -> str | None:
+        return os.environ.get(f"MINIO_{key}")
+
+    endpoint, access_key, secret_key = _menv("ENDPOINT"), _menv("ACCESS_KEY"), _menv("SECRET_KEY")
+    if not (endpoint and access_key and secret_key):
+        return None
+    from agentix.drivers.adapters.intrinsic.minio import MinioObjectStoreDriver
+    from agentix.storage import MinioConfig
+
+    return MinioObjectStoreDriver(
+        MinioConfig(
+            endpoint=endpoint,
+            access_key=access_key,
+            secret_key=secret_key,
+            bucket=_menv("BUCKET") or "agentix",
+            secure=(_menv("SECURE") or "false").lower() == "true",
+        )
+    )
+
+
 def _build_postgresql_relational(spec: DriverSpec, cfg: KernelConfig) -> Driver:
     from agentix.drivers.adapters.intrinsic.postgresql import PostgresRelationalDriver
 
@@ -308,4 +334,12 @@ def build_drivers(
 
             chat_entry = ChatFailoverChain(chat_members)  # type: ignore[arg-type]
         registry.register(chat_entry, default=True)
+
+    # Kernel owns the object store: when no storage driver was declared, register a
+    # MinIO object-store from env so consumers reach it via registry.object_store()
+    # without carrying any storage settings themselves.
+    if registry.object_store_or_none() is None:
+        env_store = _env_minio_object_store()
+        if env_store is not None:
+            registry.register(env_store)
     return registry
