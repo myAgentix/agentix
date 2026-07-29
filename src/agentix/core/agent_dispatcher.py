@@ -26,6 +26,10 @@ from agentix.core.session import save as save_session
 from agentix.core.types import Message, ToolCall, ToolCallResult, Turn
 from agentix.drivers.chat import ChatDriver, ChatRequest, tool_to_spec
 from agentix.drivers.limiter import driver_capacity
+from agentix.tools._empty_args_guard import (
+    _EMPTY_ARGS_HARD_CAP,
+    _empty_args_guard,
+)
 from agentix.tools.base import Tool, ToolContext
 from agentix.tools.registry import ToolRegistry
 from agentix.tools.safety import (
@@ -375,7 +379,7 @@ class AgentDispatcher:
                     Message(
                         role="tool",
                         tool_call_id=call.id,
-                        content=_tool_result_to_content(result),
+                        content=result.to_json_content(),
                     )
                 )
                 if not result.ok:
@@ -631,22 +635,6 @@ class AgentDispatcher:
             )
 
 
-def _tool_result_to_content(result: ToolCallResult) -> str:
-    """Serialise a ToolCallResult to structured JSON for the next LLM turn.
-
-    ``details`` carries structured error payloads (app error detail,
-    pydantic validation errors) rather than a one-line summary.
-    """
-    payload: dict[str, Any] = {"ok": result.ok}
-    if result.ok:
-        payload["output"] = result.output
-    else:
-        payload["error"] = result.error_message
-        if result.error_details is not None:
-            payload["details"] = result.error_details
-    return json.dumps(payload, default=str)
-
-
 def _extract_error_details(exc: BaseException) -> Any:
     """Return structured detail from an exception, or None.
 
@@ -718,89 +706,9 @@ def _suggest_tool_name(requested: str, registry: ToolRegistry) -> str | None:
 # "approach" string; longer values (row lists, maps, specs) are skipped by size.
 _BULK_ARG_CHARS = 120
 
-_EMPTY_ARGS_ESCALATE_AT = 2
-# Consecutive empty-args calls from the same tool in a turn that abort
-# the turn entirely (hard cost bound when the escalated directive is ignored).
-_EMPTY_ARGS_HARD_CAP = 5
-
 # Save the MinIO session checkpoint every N tool dispatches (or whenever
 # working_memory accumulates a new attempt).
 _CHECKPOINT_CADENCE = 5
-
-
-def _empty_args_guard(call: ToolCall, tool: Tool, *, streak: int = 0) -> ToolCallResult | None:
-    """Synthesise an ok=False directive ToolCallResult for an empty-args
-    call to a tool with required fields, bypassing the opaque pydantic
-    "Field required" stack.
-
-    ``streak`` is the count of consecutive prior empty-args calls from the
-    same tool this turn; at ``_EMPTY_ARGS_ESCALATE_AT`` the directive
-    escalates. Returns ``None`` for a well-formed call.
-    """
-    if call.arguments:
-        return None
-
-    required: list[tuple[str, str]] = []
-    for name, field in tool.input_schema.model_fields.items():
-        if field.is_required():
-            required.append((name, _field_type_hint(field)))
-
-    if not required:
-        return None
-
-    escalated = streak >= _EMPTY_ARGS_ESCALATE_AT
-    log.warning(
-        "agent_dispatcher.empty_args",
-        tool=call.name,
-        required=[n for n, _ in required],
-        streak=streak + 1,  # this call is the (streak+1)-th
-        escalated=escalated,
-    )
-
-    field_list = ", ".join(f"{n} ({t})" for n, t in required)
-    if escalated:
-        # Blunt directive once the basic one has been ignored 3+ times.
-        error_message = (
-            f"STOP CALLING {call.name!r} WITH EMPTY ARGUMENTS — you have "
-            f"now done so {streak + 1} times in a row this turn. The basic "
-            f"directive in the previous tool result was ignored. Either "
-            f"(a) populate ALL required fields ({field_list}) and re-emit, "
-            f"or (b) call a DIFFERENT tool. Do NOT call {call.name!r} "
-            f"again without arguments — it will keep failing the same way."
-        )
-    else:
-        error_message = (
-            f"empty arguments — your previous tool call to {call.name!r} "
-            f"had no arguments populated. Required fields: {field_list}. "
-            f"Re-emit the call with ALL required fields. "
-            f"Do NOT retry without arguments."
-        )
-
-    return ToolCallResult(
-        call_id=call.id,
-        tool_name=call.name,
-        ok=False,
-        error_message=error_message,
-        error_details={
-            "empty_args": True,
-            "tool": call.name,
-            "required_fields": [{"name": n, "type": t} for n, t in required],
-            "consecutive_empty_args": streak + 1,
-            "escalated": escalated,
-        },
-        latency_ms=0,
-    )
-
-
-def _field_type_hint(field: Any) -> str:
-    """Best-effort short type label for a pydantic FieldInfo."""
-    annotation = getattr(field, "annotation", None)
-    if annotation is None:
-        return "unknown"
-    name = getattr(annotation, "__name__", None)
-    if isinstance(name, str):
-        return name
-    return str(annotation)
 
 
 def _coerce_output(output: Any) -> Any:

@@ -8,6 +8,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
 import agentixd
+from agentixd.routes._kernel_dep import get_kernel
 
 router = APIRouter(prefix="/health", tags=["health"])
 
@@ -21,7 +22,7 @@ async def live() -> dict[str, str]:
 @router.get("/ready")
 async def ready(request: Request) -> JSONResponse:
     """Readiness probe — 200 if kernel is fully initialized and all deps healthy."""
-    kernel = request.app.state.kernel
+    kernel = get_kernel(request)
     if not kernel.ready:
         return JSONResponse(
             {"status": "starting", "kernel_ready": False, "error": kernel.error},
@@ -30,7 +31,7 @@ async def ready(request: Request) -> JSONResponse:
 
     deps: dict[str, bool] = {}
     err: str | None = None
-    hook = getattr(kernel, "_readiness_hook", None)
+    hook = kernel._readiness_hook
     if hook is not None:
         try:
             deps = await asyncio.wait_for(hook(kernel), timeout=3.0)

@@ -20,6 +20,14 @@ _DEFAULT_CONFIG = Path.home() / ".agentix" / "config.yaml"
 _DEFAULT_SOCKET = Path.home() / ".agentix" / "agentixd.sock"
 
 
+def resolve_config_path() -> Path:
+    """Resolve config path from env vars with fallback to default location.
+
+    Priority: AGENTIXD_CONFIG > AGENTIX_CONFIG > ~/.agentix/config.yaml
+    """
+    return Path(os.environ.get("AGENTIXD_CONFIG", os.environ.get("AGENTIX_CONFIG", str(_DEFAULT_CONFIG))))
+
+
 @dataclass
 class DaemonConfig:
     sqlite_path: Path
@@ -45,7 +53,7 @@ class DaemonConfig:
 
 def load_daemon_config(path: Path | None = None) -> DaemonConfig:
     """Load and parse config YAML into DaemonConfig. Raises if file is absent."""
-    resolved = path or Path(os.environ.get("AGENTIXD_CONFIG", os.environ.get("AGENTIX_CONFIG", str(_DEFAULT_CONFIG))))
+    resolved = path or resolve_config_path()
 
     import yaml  # type: ignore[import-untyped]
 

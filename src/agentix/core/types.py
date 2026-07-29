@@ -41,6 +41,23 @@ class ToolCallResult(BaseModel):
     error_details: Any = None  # structured error payload — raw Odoo load() messages, pydantic errors, etc.
     latency_ms: int = 0
 
+    def to_json_content(self) -> str:
+        """Serialise to structured JSON for the next LLM turn.
+
+        ``details`` carries structured error payloads (app error detail,
+        pydantic validation errors) rather than a one-line summary.
+        """
+        import json
+
+        payload: dict = {"ok": self.ok}
+        if self.ok:
+            payload["output"] = self.output
+        else:
+            payload["error"] = self.error_message
+            if self.error_details is not None:
+                payload["details"] = self.error_details
+        return json.dumps(payload, default=str)
+
 
 class Message(BaseModel):
     """A single message in the conversation history."""

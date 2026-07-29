@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 from pydantic import BaseModel
 
+from agentixd.routes._errors import validation_error
 from agentixd.scaffold import render_agent, render_driver
 
 router = APIRouter(prefix="/admin/scaffold", tags=["scaffold"])
@@ -27,7 +28,7 @@ async def scaffold_driver(body: ScaffoldDriverRequest) -> dict[str, str]:
     try:
         filename, content = render_driver(body.name, body.modality)
     except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        raise validation_error(str(exc)) from exc
     return {"filename": filename, "content": content}
 
 

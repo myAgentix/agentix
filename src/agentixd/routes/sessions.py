@@ -15,6 +15,9 @@ import structlog
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
+from agentixd.routes._errors import not_found, service_unavailable
+from agentixd.routes._kernel_dep import get_kernel
+
 log = structlog.get_logger(__name__)
 
 router = APIRouter(prefix="/run", tags=["sessions"])
@@ -33,13 +36,14 @@ class RunTurnRequest(BaseModel):
 
 
 def _kernel_required(request: Request) -> Any:
-    kernel = request.app.state.kernel
+    kernel = get_kernel(request)
     if not kernel.ready:
-        raise HTTPException(
-            status_code=503,
-            detail=f"kernel not ready: {kernel.error or 'still initializing'}",
-        )
+        raise service_unavailable(f"kernel not ready: {kernel.error or 'still initializing'}")
     return kernel
+
+
+def _deserialize_app_meta(raw: str | None) -> dict | None:
+    return json.loads(raw) if raw else None
 
 
 def _session_row_to_dict(row: dict[str, Any]) -> dict[str, Any]:
@@ -52,10 +56,31 @@ def _session_row_to_dict(row: dict[str, Any]) -> dict[str, Any]:
         "total_input_tokens": row.get("total_input_tokens", 0),
         "total_output_tokens": row.get("total_output_tokens", 0),
         "total_cost_usd": row.get("total_cost_usd", 0.0),
-        "app_meta": json.loads(row["app_meta"]) if row.get("app_meta") else None,
+        "app_meta": _deserialize_app_meta(row.get("app_meta")),
         "control_plane_id": row.get("control_plane_id"),
         "parent_session_id": row.get("parent_session_id"),
     }
+
+
+async def _get_or_resume_session(kernel: Any, session_id: str) -> Any:
+    """Return in-memory session or resume it from the SQLite/MinIO checkpoint."""
+    session = kernel._active_sessions.get(session_id)
+    if session is not None:
+        return session
+    from agentix.core.session import resume_or_create
+
+    row = await kernel.sqlite.get_session(session_id)
+    if not row:
+        raise not_found(f"session {session_id!r} not found")
+    session = await resume_or_create(
+        session_id,
+        customer_id=row["customer_id"],
+        sqlite=kernel.sqlite,
+        minio=kernel.minio,
+        budget_usd=float(row.get("total_cost_usd", kernel._cfg.budget_usd)),
+    )
+    kernel._active_sessions[session_id] = session
+    return session
 
 
 @router.post("/sessions", status_code=201)
@@ -107,7 +132,7 @@ async def get_session(session_id: str, request: Request) -> dict[str, Any]:
     kernel = _kernel_required(request)
     row = await kernel.sqlite.get_session(session_id)
     if not row:
-        raise HTTPException(status_code=404, detail=f"session {session_id!r} not found")
+        raise not_found(f"session {session_id!r} not found")
     return _session_row_to_dict(row)
 
 
@@ -121,22 +146,7 @@ async def run_turn(session_id: str, body: RunTurnRequest, request: Request) -> d
     kernel = _kernel_required(request)
 
     # Retrieve or resume the session
-    session = kernel._active_sessions.get(session_id)
-    if session is None:
-        # Try resuming from checkpoint
-        from agentix.core.session import resume_or_create
-
-        row = await kernel.sqlite.get_session(session_id)
-        if not row:
-            raise HTTPException(status_code=404, detail=f"session {session_id!r} not found")
-        session = await resume_or_create(
-            session_id,
-            customer_id=row["customer_id"],
-            sqlite=kernel.sqlite,
-            minio=kernel.minio,
-            budget_usd=float(row.get("total_cost_usd", kernel._cfg.budget_usd)),
-        )
-        kernel._active_sessions[session_id] = session
+    session = await _get_or_resume_session(kernel, session_id)
 
     if session.status not in ("running", "paused"):
         raise HTTPException(
@@ -151,7 +161,7 @@ async def run_turn(session_id: str, body: RunTurnRequest, request: Request) -> d
     # Use the per-session engine (with app middleware) when available; fall back to global.
     engine = kernel._session_engines.get(session_id, kernel.engine)
 
-    hook = getattr(kernel, "_pre_turn_hook", None)
+    hook = kernel._pre_turn_hook
     try:
         if hook is not None:
             async with hook(kernel, session):
@@ -188,7 +198,7 @@ async def list_turns(session_id: str, request: Request) -> list[dict[str, Any]]:
     kernel = _kernel_required(request)
     row = await kernel.sqlite.get_session(session_id)
     if not row:
-        raise HTTPException(status_code=404, detail=f"session {session_id!r} not found")
+        raise not_found(f"session {session_id!r} not found")
 
     # Query turns from SQLite
     import aiosqlite

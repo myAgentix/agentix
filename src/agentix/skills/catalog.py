@@ -59,6 +59,25 @@ class SkillBundle:
             output_modes=list(self.output_modes),
         )
 
+    def to_dict(self, root_layers: dict[str, str], *, include_body: bool = False) -> dict[str, Any]:
+        """Serialise bundle to a plain dict for the admin API."""
+        parent = str(self.bundle_dir.parent)
+        layer = root_layers.get(parent, "unknown")
+        out: dict[str, Any] = {
+            "name": self.name,
+            "description": self.description or "",
+            "layer": layer,
+            "root": parent,
+            "skill_md_path": str(self.skill_md_path) if self.skill_md_path else None,
+            "has_tools": self.has_tools,
+            "reference_only": self.reference_only,
+            "allowed_tools": list(self.allowed_tools or []),
+            "body": None,
+        }
+        if include_body and self.skill_md_path and Path(self.skill_md_path).exists():
+            out["body"] = Path(self.skill_md_path).read_text()
+        return out
+
 
 class SkillCatalog:
     """Per-agent view over one or more ``skills_root`` directories.

@@ -21,7 +21,7 @@ from rich.console import Console
 from rich.table import Table
 
 import agentixd
-from agentixd._config import load_daemon_config
+from agentixd._config import load_daemon_config, resolve_config_path
 from agentixd._kernel import KernelState, build_kernel, teardown_kernel
 from agentixd.routes import admin, health, scaffold, sessions
 
@@ -34,11 +34,7 @@ _console = Console()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Build the kernel on startup, tear it down on shutdown."""
-    cfg_path = Path(
-        os.environ.get(
-            "AGENTIXD_CONFIG", os.environ.get("AGENTIX_CONFIG", str(Path.home() / ".agentix" / "config.yaml"))
-        )
-    )
+    cfg_path = resolve_config_path()
 
     if not await asyncio.to_thread(cfg_path.exists):
         log.warning("config not found — admin/scaffold available; session execution disabled", path=str(cfg_path))
@@ -104,11 +100,7 @@ def _resolve_socket(cfg_path: Path) -> Path:
 
 
 def _resolve_cfg_path() -> Path:
-    return Path(
-        os.environ.get(
-            "AGENTIXD_CONFIG", os.environ.get("AGENTIX_CONFIG", str(Path.home() / ".agentix" / "config.yaml"))
-        )
-    )
+    return resolve_config_path()
 
 
 def _tee_to_log_file(log_path: Path) -> None:
@@ -225,7 +217,9 @@ def _start_daemon(cfg_path: Path) -> None:
         except Exception:
             pass
 
-    socket_path.parent.mkdir(parents=True, exist_ok=True)
+    from agentixd._paths import ensure_dir
+
+    ensure_dir(socket_path.parent, mode=0o700)
     os.chmod(socket_path.parent, 0o700)
     if socket_path.exists():
         socket_path.unlink()

@@ -23,6 +23,11 @@ _KERNEL_BUNDLED_SKILLS = Path(__file__).resolve().parents[1] / "agentix" / "skil
 log = structlog.get_logger(__name__)
 
 
+def is_user_skill_root(path: str) -> bool:
+    """Return True when a skill root path is a user-managed .skills/ directory."""
+    return path.endswith("/.skills") or "/.skills/" in path or path.endswith("\\.skills")
+
+
 @dataclass
 class KernelState:
     """All live kernel components for one daemon process."""
@@ -175,7 +180,7 @@ async def build_kernel(cfg: DaemonConfig) -> KernelState:
                     plugin_skills_roots.extend(pkg_roots)
                     short = pkg.split(".")[-1]
                     for r in pkg_roots:
-                        is_user = r.endswith("/.skills") or "/.skills/" in r or r.endswith("\\.skills")
+                        is_user = is_user_skill_root(r)
                         label = f"{short}-user" if is_user else short
                         root_layers[r] = label
                 log.info("plugin loaded", package=pkg)
