@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 
 import structlog
-from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi import APIRouter, Header, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
@@ -552,7 +552,7 @@ async def register_plugin(body: RegisterPluginRequest, request: Request) -> dict
 async def deregister_plugin(
     package: str,
     request: Request,
-    admin_token: str = Query(...),
+    admin_token: str = Header(..., alias="X-Admin-Token"),
 ) -> dict[str, Any]:
     """Deregister a plugin: clear its seams and remove from _loaded_plugins."""
     kernel = get_kernel(request)
