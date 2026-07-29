@@ -1,6 +1,6 @@
 # Claude local config / runtime
 .claude/
-./CLAUDE.md
+/CLAUDE.md
 
 # Secrets & generated SQL
 .env
