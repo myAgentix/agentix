@@ -28,6 +28,34 @@ def is_user_skill_root(path: str) -> bool:
     return path.endswith("/.skills") or "/.skills/" in path or path.endswith("\\.skills")
 
 
+def load_plugin(state: KernelState, tool_registry: Any, package: str) -> tuple[Any, list[str], dict[str, str]]:
+    """Import, compliance-check, and register one plugin package.
+
+    Returns (module, skill_roots, root_layers).
+    Raises DriverComplianceError on compliance violation (hard stop).
+    Raises ImportError if the package is not importable.
+    Raises RuntimeError if register() fails.
+    """
+    import importlib
+
+    from agentix.compliance import enforce_plugin_compliance
+
+    mod = importlib.import_module(f"{package}.plugin")
+    enforce_plugin_compliance(mod)
+    mod.register(state, tool_registry)
+
+    pkg_roots: list[str] = []
+    root_layers: dict[str, str] = {}
+    if callable(getattr(mod, "skills_roots", None)):
+        pkg_roots = mod.skills_roots()
+        short = package.split(".")[-1]
+        for r in pkg_roots:
+            label = f"{short}-user" if is_user_skill_root(r) else short
+            root_layers[r] = label
+
+    return mod, pkg_roots, root_layers
+
+
 @dataclass
 class KernelState:
     """All live kernel components for one daemon process."""
@@ -55,6 +83,8 @@ class KernelState:
     # returning dict[str, bool] of per-dependency health, e.g. {"object_store": True}.
     # Merged into GET /health/ready. Callable[[KernelState], Awaitable[dict[str, bool]]] | None.
     _readiness_hook: Any = None
+    # Runtime-registered plugins: package name → module. Populated by POST /admin/plugins/register.
+    _loaded_plugins: dict[str, Any] = field(default_factory=dict)
     # Skill catalog — rebuilt from skill_roots on POST /admin/skills/reload
     skill_catalog: Any = None  # SkillCatalog | None
     skill_roots: list[str] = field(default_factory=list)
@@ -165,24 +195,14 @@ async def build_kernel(cfg: DaemonConfig) -> KernelState:
     plugin_skills_roots: list[str] = []
     root_layers: dict[str, str] = {}  # path → layer label
     if cfg.plugin_packages:
-        import importlib
-
-        from agentix.compliance import DriverComplianceError, enforce_plugin_compliance
+        from agentix.compliance import DriverComplianceError
 
         for pkg in cfg.plugin_packages:
             try:
-                mod = importlib.import_module(f"{pkg}.plugin")
-                # Structural compliance gate — daemon refuses to start if violated.
-                enforce_plugin_compliance(mod)
-                mod.register(state, tool_registry)
-                if callable(getattr(mod, "skills_roots", None)):
-                    pkg_roots = mod.skills_roots()
-                    plugin_skills_roots.extend(pkg_roots)
-                    short = pkg.split(".")[-1]
-                    for r in pkg_roots:
-                        is_user = is_user_skill_root(r)
-                        label = f"{short}-user" if is_user else short
-                        root_layers[r] = label
+                mod, pkg_roots, root_layers_pkg = load_plugin(state, tool_registry, pkg)
+                state._loaded_plugins[pkg] = mod
+                plugin_skills_roots.extend(pkg_roots)
+                root_layers.update(root_layers_pkg)
                 log.info("plugin loaded", package=pkg)
             except DriverComplianceError:
                 raise  # hard stop — non-compliant plugin must not be wired in

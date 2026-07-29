@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hmac
 import subprocess
 import sys
 from collections.abc import Callable
@@ -11,11 +12,14 @@ from typing import Any
 
 import structlog
 from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from agentix.a2a import agents_file as _agents_file_for
 from agentix.a2a import load_agents as _load_agents
 from agentix.a2a import save_agents as _save_agents
+from agentix.compliance import DriverComplianceError
+from agentixd._kernel import load_plugin
 from agentixd.routes._errors import not_found, service_unavailable, validation_error
 from agentixd.routes._kernel_dep import get_kernel
 
@@ -412,3 +416,166 @@ async def reload_skills(request: Request) -> dict[str, Any]:
         return {"status": "reloaded", "skill_count": count}
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"reload failed: {exc}") from exc
+
+
+# ── Plugin registration endpoints ─────────────────────────────────────────────
+
+_SEAM_FIELDS = ("_pre_turn_hook", "_session_engine_factory", "_readiness_hook")
+
+
+def _check_token(kernel: Any, token: str | None) -> None:
+    """Raise 503 if token not configured, 401 if token mismatch."""
+    cfg_token = kernel._cfg.admin_token if kernel._cfg else None
+    if not cfg_token:
+        raise service_unavailable("admin token not configured — set AGENTIXD_ADMIN_TOKEN")
+    if not token or not hmac.compare_digest(cfg_token, token):
+        raise HTTPException(status_code=401, detail="invalid admin token")
+
+
+class RegisterPluginRequest(BaseModel):
+    package: str
+    admin_token: str
+    dry_run: bool = False
+
+
+@router.get("/seams")
+async def list_seams(request: Request) -> dict[str, bool]:
+    """Report which plugin seam slots are currently populated."""
+    kernel = get_kernel(request)
+    return {f: getattr(kernel, f) is not None for f in _SEAM_FIELDS}
+
+
+@router.get("/plugins")
+async def list_plugins(request: Request) -> list[dict[str, Any]]:
+    """List all runtime-registered plugins with the seams they have set."""
+    kernel = get_kernel(request)
+    out = []
+    for pkg in kernel._loaded_plugins:
+        out.append(
+            {
+                "package": pkg,
+                "seams_set": [f for f in _SEAM_FIELDS if getattr(kernel, f) is not None],
+            }
+        )
+    return out
+
+
+@router.post("/plugins/register", status_code=201)
+async def register_plugin(body: RegisterPluginRequest, request: Request) -> dict[str, Any]:
+    """Register a plugin package at runtime — no daemon restart required.
+
+    Gates (in order):
+      1. Token present + constant-time match
+      2. Token configured in daemon
+      3. Package is importable
+      4. enforce_plugin_compliance passes (6 AST checks)
+      5. register() completes within 10 s timeout
+      6. Seam-only writes — only _pre_turn_hook/_session_engine_factory/_readiness_hook may change
+      7. Idempotency — re-registration clears prior seams first
+      8. Module stored in _loaded_plugins
+    """
+    kernel = get_kernel(request)
+
+    # Gates 1 + 2
+    _check_token(kernel, body.admin_token)
+
+    if body.dry_run:
+        return {"dry_run": True, "package": body.package}
+
+    # Gate 3 — importable?
+    try:
+        import importlib
+
+        mod = importlib.import_module(f"{body.package}.plugin")
+    except ImportError as exc:
+        raise validation_error(f"package {body.package!r} not importable: {exc}") from exc
+
+    # Gate 7 — idempotency: clear prior seams if already loaded
+    replaced = body.package in kernel._loaded_plugins
+    if replaced:
+        for f in _SEAM_FIELDS:
+            setattr(kernel, f, None)
+
+    # Snapshot ALL fields before registration so gate 6 can detect non-seam writes.
+    _ALLOWED_CHANGED = set(_SEAM_FIELDS) | {
+        "_loaded_plugins",
+        "_active_sessions",
+        "_session_extras",
+        "_session_engines",
+        "skill_catalog",
+        "skill_roots",
+        "skill_root_layers",
+    }
+    before_all = {f: getattr(kernel, f) for f in vars(kernel)}
+    before_seams = {f: getattr(kernel, f) for f in _SEAM_FIELDS}
+
+    # Gate 5 — register() with timeout
+    try:
+        mod, pkg_roots, root_layers = await asyncio.wait_for(
+            asyncio.to_thread(load_plugin, kernel, _get_tool_registry(kernel), body.package),
+            timeout=10.0,
+        )
+    except TimeoutError as exc:
+        raise HTTPException(status_code=504, detail="register() timed out after 10 s") from exc
+    except DriverComplianceError as exc:
+        raise validation_error(str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"register() failed: {exc}") from exc
+
+    # Gate 6 — seam-only writes: check nothing outside the allowed set changed.
+    non_seam_dirty = [
+        f for f in vars(kernel) if f not in _ALLOWED_CHANGED and getattr(kernel, f) is not before_all.get(f)
+    ]
+    if non_seam_dirty:
+        for f in _SEAM_FIELDS:
+            setattr(kernel, f, before_seams[f])
+        raise validation_error(f"plugin wrote to non-seam fields: {non_seam_dirty}")
+
+    seams_set = [f for f in _SEAM_FIELDS if before_seams[f] is None and getattr(kernel, f) is not None]
+
+    # Gate 8 — store module
+    kernel._loaded_plugins[body.package] = mod
+
+    # Extend skill roots if the plugin exposes any
+    if pkg_roots:
+        kernel.skill_roots.extend(r for r in pkg_roots if r not in kernel.skill_roots)
+        kernel.skill_root_layers.update(root_layers)
+
+    log.info("plugin registered", package=body.package, replaced=replaced, seams_set=seams_set)
+    return JSONResponse(
+        {"registered": True, "package": body.package, "replaced": replaced, "seams_set": seams_set},
+        status_code=200 if replaced else 201,
+    )
+
+
+@router.delete("/plugins/{package}")
+async def deregister_plugin(
+    package: str,
+    request: Request,
+    admin_token: str = Query(...),
+) -> dict[str, Any]:
+    """Deregister a plugin: clear its seams and remove from _loaded_plugins."""
+    kernel = get_kernel(request)
+    _check_token(kernel, admin_token)
+
+    if package not in kernel._loaded_plugins:
+        raise not_found(f"plugin {package!r} not registered")
+
+    for f in _SEAM_FIELDS:
+        setattr(kernel, f, None)
+    del kernel._loaded_plugins[package]
+
+    log.info("plugin deregistered", package=package)
+    return {"removed": True, "package": package}
+
+
+def _get_tool_registry(kernel: Any) -> Any:
+    """Extract the ToolRegistry from the kernel's dispatcher."""
+    dispatcher = getattr(kernel, "dispatcher", None)
+    if dispatcher is not None:
+        registry = getattr(dispatcher, "registry", None) or getattr(dispatcher, "tool_registry", None)
+        if registry is not None:
+            return registry
+    from agentix.tools.registry import ToolRegistry
+
+    return ToolRegistry()

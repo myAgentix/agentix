@@ -41,6 +41,9 @@ class DaemonConfig:
     budget_usd: float = 200.0
     socket_path: Path = field(default_factory=lambda: _DEFAULT_SOCKET)
     config_path: Path = field(default_factory=lambda: _DEFAULT_CONFIG)
+    # Pre-shared secret for POST /admin/plugins/register. If None, endpoint returns 503.
+    # Set via AGENTIXD_ADMIN_TOKEN env var.
+    admin_token: str | None = None
 
     @property
     def has_minio(self) -> bool:
@@ -93,4 +96,5 @@ def load_daemon_config(path: Path | None = None) -> DaemonConfig:
         budget_usd=float(raw.get("budget_usd", 200.0)),
         socket_path=socket_path,
         config_path=resolved,
+        admin_token=os.environ.get("AGENTIXD_ADMIN_TOKEN"),
     )
