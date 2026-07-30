@@ -13,7 +13,21 @@ import typer
 from agentix_cli._config import CliDriverSpec, load_config, save_config, write_config
 from agentix_cli._output import dry_run_header, error, make_table, ok, print_table, warn, would
 
-app = typer.Typer(help="Manage drivers (list, show, install, uninstall, load, unload).")
+app = typer.Typer(
+    help=(
+        "Manage drivers (list, show, install, uninstall, load, unload).\n"
+        "\n"
+        "Tiers (2, for now):\n"
+        "  intrinsic  ships with the kernel — gateway models + local storage.\n"
+        "  vendor     third-party — AI model providers (openai-compat wire) and\n"
+        "             app-domain packages (ERP/CRM) shipped as their own repos.\n"
+        "\n"
+        "Types:\n"
+        "  aiprovider  LLM / AI model drivers (chat, embedding, STT).\n"
+        "  erp / crm   app-domain business-system drivers.\n"
+        "  storage     object / relational / file stores.\n"
+    ),
+)
 
 #: The single opt-in extra for adapters speaking the OpenAI-compatible wire.
 _WIRE_EXTRA = "openai-compat"
@@ -98,7 +112,7 @@ _DRIVER_META: dict[str, dict[str, str]] = {
         "sdk": "",
         "package": "",
     },
-    # integration — standalone packages, app-domain drivers (ERP, CRM, etc.).
+    # vendor — standalone packages, app-domain drivers (ERP, CRM, etc.).
     # NOT on PyPI (licensing undecided): install from the private git repo over SSH via
     #   uv pip install "git+ssh://git@github.com/<repo>.git@<ref>"
     # then enable the plugin module: `agentix driver load <key>` (writes plugin_packages).
@@ -134,8 +148,12 @@ _DRIVER_META: dict[str, dict[str, str]] = {
     },
 }
 
-_VENDOR_KEYS = {k for k, v in _DRIVER_META.items() if v["extra"] == _WIRE_EXTRA}
-_INTEGRATION_KEYS = {k for k, v in _DRIVER_META.items() if v.get("package")}
+# Vendor drivers = standalone, app-domain packages (ERP/CRM/SAP) shipped as their
+# own git repos + enabled via plugin_packages. Together with the openai-compat model
+# providers (melious, nvidia) they make up the 'vendor' tier; the 'intrinsic' tier
+# ships with the kernel. This set holds only the package/plugin drivers — the branch
+# that routes install/show through the git-SSH + plugin_packages path.
+_VENDOR_KEYS = {k for k, v in _DRIVER_META.items() if v.get("package")}
 
 # Env vars each chat provider reads its key / base_url from. MUST match
 # agentix.drivers.factory. Consumed by `driver providers` and `model list`.
@@ -173,13 +191,21 @@ def _sdk_installed(sdk: str) -> bool:
 
 
 def _tier(key: str) -> str:
-    if key in _INTEGRATION_KEYS:
-        return "integration"
-    meta = _DRIVER_META.get(key, {})
-    extra = meta.get("extra", "")
-    if extra == _WIRE_EXTRA:
-        return "aiprovider"
+    """Two tiers, for now: 'vendor' for third-party drivers (app-domain packages +
+    openai-compat model providers), 'intrinsic' for everything that ships with the
+    kernel (gateway models, local storage, the HF STT adapter)."""
+    if key in _VENDOR_KEYS or _DRIVER_META.get(key, {}).get("extra") == _WIRE_EXTRA:
+        return "vendor"
     return "intrinsic"
+
+
+def _display_type(key: str) -> str:
+    """Operator-facing type shown in the catalogue. AI model drivers carry the kernel
+    functional type 'model' (the factory routes them by modality — chat/embedding/stt);
+    the catalogue presents them as 'aiprovider'. The DriverSpec written to config keeps
+    type='model' so kernel driver resolution is unchanged — this is display only."""
+    t = _DRIVER_META.get(key, {}).get("type", "")
+    return "aiprovider" if t == "model" else t
 
 
 def _git_ssh_spec(repo: str, ref: str | None = None) -> str:
@@ -200,7 +226,7 @@ def _git_ssh_spec(repo: str, ref: str | None = None) -> str:
 
 def _install_label(key: str) -> str:
     meta = _DRIVER_META.get(key, {})
-    # Integration drivers ship from private git (SSH), not PyPI — show the real command.
+    # Package (ERP/CRM) vendor drivers ship from private git (SSH), not PyPI — show the real command.
     if meta.get("repo"):
         return f'uv pip install "{_git_ssh_spec(meta["repo"])}"'
     if meta.get("package"):
@@ -247,7 +273,7 @@ def driver_list(
 ) -> None:
     """List all available drivers with type, modality, and install status.
 
-    Without --active: shows the full catalogue (kernel + integration).
+    Without --active: shows the full catalogue (kernel + vendor).
     With --active:    shows only drivers configured in the current config file.
     """
     if active:
@@ -260,20 +286,17 @@ def driver_list(
         tier = _tier(key)
         status = meta.get("status", "available")
 
-        if tier == "integration":
+        if tier == "vendor":
             if status == "planned":
                 avail = "[dim]planned[/dim]"
             else:
                 avail = "[green]yes[/green]" if _sdk_installed(sdk) else "[red]not installed[/red]"
-            tier_label = "[cyan]integration[/cyan]"
-        elif tier == "aiprovider":
-            avail = "[green]yes[/green]" if _sdk_installed(sdk) else "[red]no[/red]"
-            tier_label = "[yellow]aiprovider[/yellow]"
+            tier_label = "[yellow]vendor[/yellow]"
         else:
             avail = "[green]yes[/green]" if _sdk_installed(sdk) else "[red]no[/red]"
             tier_label = "intrinsic"
 
-        t.add_row(key, tier_label, meta["type"], meta["modality"], meta["source"], _install_label(key), avail)
+        t.add_row(key, tier_label, _display_type(key), meta["modality"], meta["source"], _install_label(key), avail)
     print_table(t)
 
 
@@ -337,14 +360,14 @@ def driver_show(key: str = typer.Argument(..., help="Driver key (e.g. melious, o
         ("Key", key),
         ("Tier", tier),
         ("Status", status),
-        ("Type", meta["type"]),
+        ("Type", _display_type(key)),
         ("Modality", meta["modality"]),
         ("Source", meta["source"]),
         ("Install", _install_label(key)),
         ("SDK / package", sdk or "(none)"),
         ("Available", "yes" if (status == "planned" or _sdk_installed(sdk)) else "not installed"),
     ]
-    if tier == "integration":
+    if key in _VENDOR_KEYS:
         if meta.get("repo"):
             rows.append(("Repo (SSH)", meta["repo"]))
         rows.append(("Enable", f"agentix driver load {key}   (adds {sdk} to plugin_packages)"))
@@ -364,9 +387,10 @@ def driver_install(
 ) -> None:
     """Install a driver and register it.
 
-    Vendor/intrinsic: pip-install the SDK extra + write a DriverSpec. Non-intrinsic
-    (integration): install from the private git repo over SSH + enable in plugin_packages
-    (equivalent to 'driver install' followed by 'driver load'). Takes effect on restart.
+    AI providers / intrinsic: pip-install the SDK extra + write a DriverSpec. Package
+    (ERP/CRM) drivers: install from the private git repo over SSH + enable in
+    plugin_packages (equivalent to 'driver install' followed by 'driver load'). Takes
+    effect on restart.
     """
     if key not in _DRIVER_META:
         error(f"unknown driver key {key!r}. Run 'agentix driver list'.")
@@ -378,7 +402,6 @@ def driver_install(
     sdk = meta["sdk"]
     cfg = load_config(config_path)
 
-    tier = _tier(key)
     package = meta.get("package", "")
     status = meta.get("status", "available")
 
@@ -388,7 +411,7 @@ def driver_install(
 
     if dry_run:
         dry_run_header()
-        if tier == "integration":
+        if key in _VENDOR_KEYS:
             would(f'uv pip install "{_git_ssh_spec(meta.get("repo", ""))}"')
             would(f"enable plugin {sdk!r} in plugin_packages in {cfg.config_path}")
         elif extra:
@@ -400,8 +423,8 @@ def driver_install(
         return
 
     # 1. Install package / SDK extra
-    if tier == "integration":
-        # Non-intrinsic drivers ship from a private git repo over SSH (not PyPI), and are
+    if key in _VENDOR_KEYS:
+        # Package (ERP/CRM) drivers ship from a private git repo over SSH (not PyPI), and are
         # enabled via plugin_packages (not a DriverSpec). Install → load in one step.
         spec = _git_ssh_spec(meta.get("repo", ""))
         if not _sdk_installed(sdk):
@@ -440,7 +463,7 @@ def driver_install(
     raw = save_config(cfg, driver_to_add=driver_spec)
     write_config(raw, cfg.config_path)
     ok(f"Driver {key!r} registered as {spec_name!r} in {cfg.config_path}")
-    if tier == "aiprovider":
+    if extra == _WIRE_EXTRA:
         warn("Remember to set your API key — see docs/vendor-licenses.md for ToS.")
 
 

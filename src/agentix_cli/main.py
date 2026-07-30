@@ -32,7 +32,7 @@ app = typer.Typer(
 )
 
 # Register subcommand groups
-app.add_typer(driver.app, name="driver", help="Manage drivers (list, providers, show, install, load).")
+app.add_typer(driver.app, name="driver")
 app.add_typer(model.app, name="model", help="List models available from a provider.")
 app.add_typer(session.app, name="session", help="Inspect sessions stored in the SQLite kernel database.")
 app.add_typer(tool.app, name="tool", help="List and inspect registered tools.")

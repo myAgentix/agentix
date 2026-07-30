@@ -69,8 +69,17 @@ def _sdk_installed(sdk: str) -> bool:
 
 
 def _tier(key: str) -> str:
+    """Two tiers, for now: 'vendor' for third-party model providers (openai-compat wire),
+    'intrinsic' for what ships with the kernel."""
     meta = _DRIVER_META.get(key, {})
-    return "aiprovider" if meta.get("extra") == _WIRE_EXTRA else "intrinsic"
+    return "vendor" if meta.get("extra") == _WIRE_EXTRA else "intrinsic"
+
+
+def _display_type(key: str) -> str:
+    """Operator-facing type. AI model drivers (kernel functional type 'model') present as
+    'aiprovider'; the functional type stays 'model' for kernel routing (display only)."""
+    t = _DRIVER_META.get(key, {}).get("type", "")
+    return "aiprovider" if t == "model" else t
 
 
 def _driver_info(key: str) -> dict[str, Any]:
@@ -78,7 +87,7 @@ def _driver_info(key: str) -> dict[str, Any]:
     return {
         "key": key,
         "tier": _tier(key),
-        "type": meta.get("type", ""),
+        "type": _display_type(key),
         "modality": meta.get("modality", ""),
         "source": meta.get("source", ""),
         "extra": f"agentix[{meta['extra']}]" if meta.get("extra") else "core",
