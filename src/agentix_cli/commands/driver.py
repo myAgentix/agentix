@@ -178,7 +178,7 @@ def _tier(key: str) -> str:
     meta = _DRIVER_META.get(key, {})
     extra = meta.get("extra", "")
     if extra == _WIRE_EXTRA:
-        return "vendor"
+        return "aiprovider"
     return "intrinsic"
 
 
@@ -266,9 +266,9 @@ def driver_list(
             else:
                 avail = "[green]yes[/green]" if _sdk_installed(sdk) else "[red]not installed[/red]"
             tier_label = "[cyan]integration[/cyan]"
-        elif tier == "vendor":
+        elif tier == "aiprovider":
             avail = "[green]yes[/green]" if _sdk_installed(sdk) else "[red]no[/red]"
-            tier_label = "[yellow]vendor[/yellow]"
+            tier_label = "[yellow]aiprovider[/yellow]"
         else:
             avail = "[green]yes[/green]" if _sdk_installed(sdk) else "[red]no[/red]"
             tier_label = "intrinsic"
@@ -440,7 +440,7 @@ def driver_install(
     raw = save_config(cfg, driver_to_add=driver_spec)
     write_config(raw, cfg.config_path)
     ok(f"Driver {key!r} registered as {spec_name!r} in {cfg.config_path}")
-    if tier == "vendor":
+    if tier == "aiprovider":
         warn("Remember to set your API key — see docs/vendor-licenses.md for ToS.")
 
 

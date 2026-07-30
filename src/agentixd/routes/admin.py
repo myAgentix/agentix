@@ -70,7 +70,7 @@ def _sdk_installed(sdk: str) -> bool:
 
 def _tier(key: str) -> str:
     meta = _DRIVER_META.get(key, {})
-    return "vendor" if meta.get("extra") == _WIRE_EXTRA else "intrinsic"
+    return "aiprovider" if meta.get("extra") == _WIRE_EXTRA else "intrinsic"
 
 
 def _driver_info(key: str) -> dict[str, Any]:
