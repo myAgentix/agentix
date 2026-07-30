@@ -49,7 +49,7 @@ class ToolCallResult(BaseModel):
         """
         import json
 
-        payload: dict = {"ok": self.ok}
+        payload: dict[str, object] = {"ok": self.ok}
         if self.ok:
             payload["output"] = self.output
         else:
