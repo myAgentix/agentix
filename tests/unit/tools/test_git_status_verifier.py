@@ -2,6 +2,7 @@
 working tree actually changed. Without it, SafetyGate reads a missing ``ok`` (defaults True) and passes a
 no-op / failed write vacuously — voiding the verify->rollback guarantee for the edit tools.
 """
+
 from __future__ import annotations
 
 import subprocess
