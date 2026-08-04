@@ -39,8 +39,7 @@ def test_intrinsic_import_does_not_pull_openai() -> None:
         text=True,
     )
     assert result.returncode == 0, (
-        "importing the intrinsic local object store pulled an optional SDK:\n"
-        f"{result.stderr}"
+        f"importing the intrinsic local object store pulled an optional SDK:\n{result.stderr}"
     )
 
 
