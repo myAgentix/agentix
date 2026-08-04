@@ -57,6 +57,14 @@ seam #13.
   `memory.md`, `budgets.md`, `contracts-consumer-guide.md`, `README.md`,
   `scripts/install.sh` and both driver SVGs updated.
 - Net: **~1,800 LOC removed**; the default install now carries no commercial AI SDK.
+- **`adapters/__init__` (BREAKING, no known consumers) — #169**: the package no longer
+  re-exports `HubleChatDriver`/`MeliousChatDriver`/`NvidiaChatDriver`/`OpenAIChatDriver`.
+  A package `__init__` runs before any submodule, so those re-exports executed
+  `openai_compat`'s module-level `import openai` on **every** consumer — including the
+  pure-stdlib `intrinsic/local_fs_object` object store, which made `[openai-compat]`
+  effectively mandatory. Import adapters by submodule path (`factory.py` and all
+  consumers already do). A subprocess import-isolation test plus an AST gate over
+  `adapters/**/__init__.py` keep the eager imports from creeping back.
 
 ## 0.7.1 — compliance: Check 6 plugin-register-missing
 

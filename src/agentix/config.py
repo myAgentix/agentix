@@ -25,7 +25,7 @@ from agentix.storage import MinioConfig
 class HubleConfig:
     """HUBLE gateway config.
 
-    When ``enabled=True``, the runtime builds a :class:`agentix.drivers.adapters.huble.HubleChatDriver`
+    When ``enabled=True``, the runtime builds a :class:`agentix.drivers.adapters.intrinsic.huble.HubleChatDriver`
     so every LLM call routes through HUBLE.
     """
 
