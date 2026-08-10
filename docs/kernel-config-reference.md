@@ -55,6 +55,9 @@ llm_pricing:
   # Display only — the CLI shows per-million rates in EUR. Stored cost stays USD.
   usd_eur_rate: 0.92
   rate_as_of: 2026-08-01
+  # USD value of one gateway credit. Gateways that bill in credits (melious) report the
+  # exact credits per call but no currency amount; this converts that into money.
+  usd_per_credit: 0.10
   models:
     deepseek-v4-flash: {input_per_million: 0.27, output_per_million: 1.10}
     some-model-4-6: {input_per_million: 3.00, output_per_million: 15.00, cached_input_per_million: 0.30}
@@ -74,6 +77,11 @@ Date-stamped model ids are prefix-matched (`some-model-4-6-20260101` →
 `core/middleware/cost_tracking.py`. Recorded spend is chat-only in v0.5
 ([`budgets.md`](budgets.md) §3); `DriverDescriptor.pricing_ref = None` marks
 non-token-priced drivers.
+
+`usd_per_credit` is what makes recorded spend authoritative rather than estimated for a
+credit-billing gateway — see [`budgets.md`](budgets.md) §3 for the cost-source hierarchy.
+Unset, credit-billed calls fall back to the per-token estimate and log
+`cost_recorder.credits_unpriced`.
 
 **Two lookups, deliberately different.** `resolve_pricing()` returns the configured
 price or `None`; `_lookup_pricing()` wraps it and applies the `__unknown__` default.

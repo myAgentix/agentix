@@ -73,6 +73,12 @@ class LlmPricingConfig:
     models: dict[str, ModelPricing] = field(default_factory=dict)
     usd_eur_rate: float | None = None
     rate_as_of: str | None = None
+    # USD value of one gateway credit. Gateways that bill in credits (melious's
+    # ``billing_cost.credits``) report the exact credits consumed per call but no
+    # currency amount; this is the one number that turns that authoritative usage
+    # figure into money. None → such calls fall back to the per-token estimate,
+    # which will not match the invoice.
+    usd_per_credit: float | None = None
 
     def as_table(self) -> dict[str, ModelPricing]:
         """Return the pricing table merged with the ``__unknown__`` fallback."""
@@ -117,24 +123,27 @@ class LlmPricingConfig:
                 except (KeyError, TypeError, ValueError) as exc:
                     log.warning("llm_pricing.entry_invalid", model=str(model_id), error=str(exc)[:120])
 
-        rate = block.get("usd_eur_rate")
-        parsed_rate: float | None = None
-        if rate is not None:
+        def _positive_rate(key: str) -> float | None:
+            """Parse a rate, rejecting anything that would silently zero costs."""
+            value = block.get(key)
+            if value is None:
+                return None
             try:
-                parsed_rate = float(rate)
+                parsed = float(value)
             except (TypeError, ValueError):
-                log.warning("llm_pricing.rate_invalid", value=str(rate)[:40])
-            else:
-                # A non-positive rate would silently zero every displayed price.
-                if parsed_rate <= 0:
-                    log.warning("llm_pricing.rate_not_positive", value=parsed_rate)
-                    parsed_rate = None
+                log.warning("llm_pricing.rate_invalid", key=key, value=str(value)[:40])
+                return None
+            if parsed <= 0:
+                log.warning("llm_pricing.rate_not_positive", key=key, value=parsed)
+                return None
+            return parsed
 
         as_of = block.get("rate_as_of")
         return cls(
             models=models,
-            usd_eur_rate=parsed_rate,
+            usd_eur_rate=_positive_rate("usd_eur_rate"),
             rate_as_of=str(as_of) if as_of is not None else None,
+            usd_per_credit=_positive_rate("usd_per_credit"),
         )
 
 

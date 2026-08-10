@@ -204,6 +204,38 @@ _SCHEMA_STATEMENTS: tuple[str, ...] = (
     )
     """,
     "CREATE INDEX IF NOT EXISTS idx_tool_progress_session ON tool_progress (session_id, created_at)",
+    # One row per billed LLM call: where it was served and what it cost.
+    #
+    # `provider_id` / `location` are per-call data-residency facts reported by
+    # the gateway (they can differ between two calls to the SAME model), so they
+    # cannot be inferred once from config — durable rows are the audit evidence.
+    # `credits` is the gateway's own billed amount in ITS unit; `cost_usd` is
+    # that converted with the operator's credit rate, or the local estimate when
+    # no rate is configured. Both are kept so a rate change can be re-derived.
+    # No ALTER migration is needed: initialize() runs every CREATE IF NOT EXISTS.
+    """
+    CREATE TABLE IF NOT EXISTS llm_calls (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+        provider TEXT NOT NULL,
+        model TEXT NOT NULL,
+        provider_id TEXT,
+        location TEXT,
+        input_tokens INTEGER NOT NULL DEFAULT 0,
+        output_tokens INTEGER NOT NULL DEFAULT 0,
+        cached_tokens INTEGER NOT NULL DEFAULT 0,
+        credits REAL,
+        cost_usd REAL NOT NULL DEFAULT 0.0,
+        cost_source TEXT NOT NULL,
+        energy_kwh REAL,
+        carbon_g_co2 REAL,
+        system_fingerprint TEXT,
+        finish_reason TEXT,
+        created_at TEXT NOT NULL
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_llm_calls_session ON llm_calls (session_id, created_at)",
+    "CREATE INDEX IF NOT EXISTS idx_llm_calls_location ON llm_calls (location, created_at)",
     # FTS5 virtual table mirroring the searchable columns on `turns`. Kept in
     # sync via AFTER INSERT / UPDATE / DELETE triggers below.
     """
@@ -714,6 +746,69 @@ class SqliteStore:
                 "sqlite.tool_progress_failed",
                 session_id=session_id,
                 tool=tool_name,
+                error=type(exc).__name__,
+                message=str(exc)[:300],
+            )
+
+    async def append_llm_call(
+        self,
+        *,
+        session_id: str,
+        provider: str,
+        model: str,
+        input_tokens: int = 0,
+        output_tokens: int = 0,
+        cached_tokens: int = 0,
+        cost_usd: float = 0.0,
+        cost_source: str = "estimated",
+        credits: float | None = None,
+        provider_id: str | None = None,
+        location: str | None = None,
+        energy_kwh: float | None = None,
+        carbon_g_co2: float | None = None,
+        system_fingerprint: str | None = None,
+        finish_reason: str | None = None,
+    ) -> None:
+        """Record one billed LLM call. Best-effort — never raises.
+
+        ``cost_source`` distinguishes a gateway-reported amount from a locally
+        estimated one, so a spend report can say which rows are authoritative.
+        Failure to write must not break the model round-trip, matching
+        :meth:`append_tool_progress`; the loud log is how an operator notices.
+        """
+        try:
+            drv = self._driver
+            await drv.execute(
+                "INSERT INTO llm_calls (session_id, provider, model, provider_id, location, "
+                "input_tokens, output_tokens, cached_tokens, credits, cost_usd, cost_source, "
+                "energy_kwh, carbon_g_co2, system_fingerprint, finish_reason, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    session_id,
+                    provider,
+                    model,
+                    provider_id,
+                    location,
+                    input_tokens,
+                    output_tokens,
+                    cached_tokens,
+                    credits,
+                    cost_usd,
+                    cost_source,
+                    energy_kwh,
+                    carbon_g_co2,
+                    system_fingerprint,
+                    finish_reason,
+                    _now(),
+                ),
+            )
+            await drv.commit()
+        except Exception as exc:
+            log.warning(
+                "sqlite.llm_call_failed",
+                session_id=session_id,
+                provider=provider,
+                model=model,
                 error=type(exc).__name__,
                 message=str(exc)[:300],
             )
