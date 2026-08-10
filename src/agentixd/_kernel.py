@@ -253,8 +253,6 @@ async def build_kernel(cfg: DaemonConfig) -> KernelState:
             minio=state.minio,
             memory=state.memory,
             skills_root=_skills_root,
-            source=extras.get("source"),
-            target=extras.get("target"),
             dry_run=extras.get("dry_run", False),
             embeddings=embeddings,
         )

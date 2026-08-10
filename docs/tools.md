@@ -75,6 +75,37 @@ but stay registered: verifier lookup, facade dispatch and exact-name execution
 keep resolving. Apps use this to advertise a facade while its sub-tools stay
 resident (smaller per-turn menu = lower context cost + less choice confusion).
 
+### Driver surfaces — the fourth way in (spec 001)
+
+Integration drivers do not register tools individually. They `mount()` a
+`ToolSurface` (`tools/surface.py`) and keep ownership of their own namespace,
+resolution, client handle, and menu contribution. The kernel mediates: it owns
+the per-turn menu, dispatch, the safety gate, and stays the sole LLM caller
+(enforced — see `driver-compliance.md`, check `driver-llm-access`).
+
+- Names are `<namespace>__<local>`, e.g. `odoo__detect_version`. The separator is
+  `__`, not `.`: providers constrain function names to `[A-Za-z0-9_-]`, so a dot
+  is rejected on the wire.
+- `mount(surface)` is strict — a duplicate namespace, or one that would shadow an
+  existing flat tool name, raises `ToolConflict`. Two drivers may therefore ship
+  the same *local* name without colliding.
+- `get(name)` tries the flat table first, then routes by namespace to the owning
+  surface. All kernel resolution funnels through it, so namespaced verifiers and
+  exact-name calls work with no extra wiring.
+- A surface declares `active()`. Inactive → contributes nothing to the menu, but
+  still resolves by exact name — the same split `advertised = False` draws. The
+  Odoo driver gates on its own lease, so an installed-but-unleased driver costs
+  zero menu tokens. The menu is rebuilt per turn, so a lease opened mid-turn
+  surfaces on the next one.
+- Registry vocabulary: `all_tools()` is flat-table only; `resolvable_tools()`
+  spans surfaces too (diagnostics, name suggestion); `advertised_tools()` is the
+  per-turn menu and the single home of the advertisement rule.
+
+A driver's tools take their client from the driver's own lease
+(`DriverRegistry.leased(name)`), not from `ToolContext`. The untyped
+`ToolContext.source`/`.target` slots and their `require_*` accessors were removed
+with spec 001 — no app has to thread a handle through the kernel any more.
+
 ## 3. Kernel primitives (`tools/builtin.py`)
 
 Two sets, composed onto the app's registry alongside its own tools:

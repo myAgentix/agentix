@@ -4,7 +4,7 @@ The kernel calls ``enforce_plugin_compliance(module)`` before wiring any
 integration plugin.  If the plugin's source violates the structural rules, the
 kernel raises ``DriverComplianceError`` and the daemon refuses to start.
 
-The five checks are AST-based so no driver code is executed during the scan.
+The checks are AST-based so no driver code is executed during the scan.
 Drivers can also call ``check_driver_compliance(src_root)`` from their own CI
 to catch violations before deployment.
 """
@@ -48,6 +48,53 @@ _ALLOWED_PRIVATE: frozenset[str] = frozenset(
         "agentix.core.middleware",
     }
 )
+
+# ── check 7 tables: the kernel is the sole LLM caller ─────────────────────
+#
+# A driver supplies tools and I/O; it never prompts a model. Reaching an LLM
+# is the kernel's job alone, so the driver must not import the kernel's chat
+# seam nor talk to a provider directly. Embedding drivers are deliberately
+# NOT listed: semantic recall is a storage-side concern, not an LLM call, and
+# ``agentix.drivers.embedding`` stays available to drivers.
+
+# Kernel modules that constitute the chat/LLM seam.
+_LLM_KERNEL_MODULES: frozenset[str] = frozenset(
+    {
+        "agentix.drivers.chat",
+        "agentix.drivers.router",
+        "agentix.drivers.cost",
+        "agentix.drivers.adapters.intrinsic.huble",
+    }
+)
+
+# Any import under this prefix is a vendor chat adapter.
+_LLM_VENDOR_PREFIX = "agentix.drivers.adapters.vendor"
+
+# Third-party provider SDKs — a direct wire to a model.
+_LLM_PROVIDER_SDKS: frozenset[str] = frozenset(
+    {
+        "anthropic",
+        "openai",
+        "google.generativeai",
+        "google.genai",
+        "mistralai",
+        "cohere",
+        "ollama",
+        "litellm",
+        "transformers",
+    }
+)
+
+
+def _is_llm_module(module: str) -> bool:
+    """Whether ``module`` (an import target) reaches an LLM."""
+    if module in _LLM_KERNEL_MODULES or module.startswith(f"{_LLM_VENDOR_PREFIX}."):
+        return True
+    if module == _LLM_VENDOR_PREFIX:
+        return True
+    # Match the SDK root so ``openai.types`` is caught alongside ``openai``.
+    root = module.split(".")[0]
+    return module in _LLM_PROVIDER_SDKS or root in {s.split(".")[0] for s in _LLM_PROVIDER_SDKS}
 
 
 @dataclass
@@ -97,6 +144,7 @@ class DriverComplianceChecker:
             self._check_tool_protocol(tree, rel)
             self._check_memory_raw_io(tree, rel)
             self._check_private_imports(tree, rel)
+            self._check_llm_access(tree, rel)
         self._check_skills_markdown()
         self._check_plugin_register()
         return list(self._violations)
@@ -220,6 +268,49 @@ class DriverComplianceChecker:
                                 f"imports private kernel module {alias.name!r} — use the public API only",
                             )
 
+    # ── Check 7: the kernel is the sole LLM caller ─────────────────────────
+
+    def _check_llm_access(self, tree: ast.AST, rel: str) -> None:
+        """Forbid any path by which a driver could reach an LLM itself.
+
+        Two shapes are flagged: importing the kernel's chat seam or a provider
+        SDK, and calling ``.chat()`` on a driver registry to obtain a
+        ChatDriver handle. A driver contributes tools and I/O; the kernel does
+        the prompting.
+        """
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom) and node.module and _is_llm_module(node.module):
+                self._add(
+                    "driver-llm-access",
+                    rel,
+                    node.lineno,
+                    f"imports LLM surface {node.module!r} — the kernel is the only LLM caller; "
+                    "a driver exposes tools and I/O, never prompts a model",
+                )
+            elif isinstance(node, ast.Import):
+                for alias in node.names:
+                    if _is_llm_module(alias.name):
+                        self._add(
+                            "driver-llm-access",
+                            rel,
+                            node.lineno,
+                            f"imports LLM surface {alias.name!r} — the kernel is the only LLM caller; "
+                            "a driver exposes tools and I/O, never prompts a model",
+                        )
+            # registry.chat() / state.registry.chat() — acquiring a ChatDriver.
+            elif (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and node.func.attr == "chat"
+                and _receiver_mentions_registry(node.func.value)
+            ):
+                self._add(
+                    "driver-llm-access",
+                    rel,
+                    node.lineno,
+                    "calls registry.chat() to obtain a ChatDriver — the kernel is the only LLM caller",
+                )
+
     # ── Check 5: skills are markdown ──────────────────────────────────────
 
     def _check_skills_markdown(self) -> None:
@@ -292,6 +383,16 @@ class DriverComplianceChecker:
                 "plugin.py does not define register(state, tool_registry) at module level — "
                 "agentixd will crash with AttributeError when loading this plugin",
             )
+
+
+def _receiver_mentions_registry(node: ast.expr) -> bool:
+    """Whether a call receiver names a driver registry (``registry``,
+    ``state.registry``, ``self._registry``, …)."""
+    while isinstance(node, ast.Attribute):
+        if "registry" in node.attr.lower():
+            return True
+        node = node.value
+    return isinstance(node, ast.Name) and "registry" in node.id.lower()
 
 
 def check_driver_compliance(src_root: Path) -> list[ComplianceViolation]:

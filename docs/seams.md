@@ -55,14 +55,18 @@ behind a facade). App exceptions may expose `to_error_details()` (dispatcher hoo
 return structured error payloads.
 *LUDO:* ~40 migration tools (extract/load/discover/pin/diagnose…).
 
-### 6. ToolContext injection — opaque app handles
-`src/agentix/tools/base.py` (`ToolContext` — [`tools.md`](tools.md) §1). `source` /
-`target` are untyped handles the app fills with its own clients; the kernel never inspects
-them. Tools access via `ctx.require_source()` / `ctx.require_target()`. `dry_run` is the
+### 6. ToolContext injection — kernel-owned dependencies
+`src/agentix/tools/base.py` (`ToolContext` — [`tools.md`](tools.md) §1). `dry_run` is the
 kernel's mutate-block flag (set by the caller; `SafetyGate` checks it). `embeddings` is an
 optional `EmbeddingDriver` injected per-session; `None` signals tools to fall back to the
 lexical baseline.
-*LUDO:* source/target Odoo RPC clients; embeddings from `huble-embedding`.
+
+The untyped `source` / `target` app-handle slots (and `require_source()` /
+`require_target()`) were **removed** with spec 001. A driver's tools now take their
+client from the driver's own lease via its `ToolSurface`
+(`DriverRegistry.leased(name)`), so no app threads a client through the kernel and no
+kernel type stays `Any` to accommodate one.
+*LUDO:* Odoo RPC clients arrive per lease; embeddings from `huble-embedding`.
 
 ### 7. Sandbox allowlists + agent identity — startup extenders
 `src/agentix/tools/spike/web_fetch.py` (`register_allowed_hosts`),

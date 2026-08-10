@@ -18,7 +18,7 @@ to start.
 
 Optional seams (1–4, 6–7, 11, 13, 15) may be used as needed; none are required.
 
-## Five structural checks
+## Structural checks
 
 The kernel AST-scans the plugin's source tree before calling `register()`.
 
@@ -30,6 +30,7 @@ The kernel AST-scans the plugin's source tree before calling `register()`.
 | No private kernel internals imported | `private-kernel-import` | error |
 | Skills have SKILL.md | `skill-missing-markdown` | warning |
 | Plugin exposes `register(state, tool_registry)` | `plugin-register-missing` | error (if plugin.py present) / warning (if absent) |
+| Driver never reaches an LLM | `driver-llm-access` | error |
 
 **Plugin register** — if `plugin.py` is present in the source tree, it must define
 `register(state, tool_registry)` at module level with at least 2 positional parameters.
@@ -40,6 +41,15 @@ only (drivers used as dependencies, not as plugin_packages, legitimately have no
 **Shadow classes** — drivers must not redefine: `Session`, `Turn`, `WorkingMemory`,
 `ToolContext`, `ToolRegistry`, `SkillCatalog`, `Dispatcher`, `KernelState`,
 `MemoryRegistry`.
+
+**LLM access** — the kernel is the only entity that talks to an LLM. A driver
+supplies tools and I/O; it never prompts a model. Forbidden: importing
+`agentix.drivers.chat`, `.router`, `.cost`, any `agentix.drivers.adapters.vendor.*`
+or the huble adapter; importing a provider SDK (`anthropic`, `openai`,
+`google.generativeai`, `mistralai`, `cohere`, `ollama`, `litellm`, `transformers`);
+and calling `.chat()` on a driver registry to obtain a `ChatDriver`.
+`agentix.drivers.embedding` is deliberately **allowed** — semantic recall is a
+storage-side concern, not an LLM call.
 
 **Private imports** — modules under `agentix.core._*` or `agentix.storage._*`
 (underscore-prefixed sub-modules) are kernel-internal. Only public re-exports are

@@ -48,6 +48,22 @@ def skills_roots() -> list[str]:
     ...
 ```
 
+### Integration drivers: mount a surface, don't register tools
+
+A plugin that fronts an integration driver mounts a namespaced `ToolSurface`
+(spec 001) instead of registering tools one by one:
+
+```python
+def register(state, tool_registry):
+    tool_registry.mount(MyToolSurface(state.registry))
+```
+
+The driver then owns its `mydriver__*` namespace, its own resolution, its client
+handle (from its own lease via `state.registry.leased(name)`), and whether its
+tools appear in the current turn's menu. The kernel mediates only. See
+[`tools.md`](tools.md) §2 for the surface contract and `driver-compliance.md` for
+the `driver-llm-access` gate that keeps the kernel the sole LLM caller.
+
 Both are called synchronously inside `build_kernel()`. For async work (e.g. NATS
 connection), schedule a coroutine:
 

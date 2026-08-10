@@ -33,7 +33,9 @@ class _StubRegistry:
     def __init__(self, tool_names: list[str]) -> None:
         self._tools = [_StubTool(n) for n in tool_names]
 
-    def all_tools(self) -> list[_StubTool]:
+    def resolvable_tools(self) -> list[_StubTool]:
+        """Name suggestion spans everything ``get()`` can route — flat tools
+        plus mounted driver surfaces (spec 001)."""
         return list(self._tools)
 
 
