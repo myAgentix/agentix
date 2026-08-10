@@ -55,16 +55,21 @@ FALLBACK_PRICING: dict[str, ModelPricing] = {
 }
 
 
-def _lookup_pricing(model: str, pricing_table: Mapping[str, ModelPricing]) -> ModelPricing:
-    """Resolve ``model`` against ``pricing_table`` with prefix-match fallback.
+def resolve_pricing(model: str, pricing_table: Mapping[str, ModelPricing]) -> ModelPricing | None:
+    """Resolve ``model`` to its **real** configured price, or ``None``.
 
     Provider responses include a date-stamped model id:
     ``some-model-4-6-20260101``, ``other-model-mini-2025-11-01``. An exact
-    dict lookup misses and the call falls through to ``__unknown__`` —
-    silent undercount that also causes ``TokenBudgetMiddleware`` to
-    under-count and run past budget. This helper strips one trailing
-    ``-<digit-tail>`` segment at a time and retries, so a date-stamped
-    id still resolves to the base family's pricing row.
+    dict lookup misses, so this strips one trailing hyphen-delimited segment
+    at a time and retries, letting a date-stamped id resolve to the base
+    family's pricing row.
+
+    Deliberately returns ``None`` rather than the ``__unknown__`` fallback:
+    callers that must always produce a number apply that default themselves
+    (:func:`_lookup_pricing`), while callers that **display** a price to an
+    operator need to distinguish a configured rate from a placeholder. Showing
+    the fallback as a price on a model-choice screen would misinform the
+    decision it exists to support.
     """
     if model in pricing_table:
         return pricing_table[model]
@@ -75,6 +80,18 @@ def _lookup_pricing(model: str, pricing_table: Mapping[str, ModelPricing]) -> Mo
         candidate = candidate.rsplit("-", 1)[0]
         if candidate in pricing_table:
             return pricing_table[candidate]
+    return None
+
+
+def _lookup_pricing(model: str, pricing_table: Mapping[str, ModelPricing]) -> ModelPricing:
+    """Same resolution as :func:`resolve_pricing`, but always returns a price.
+
+    Unpriced models fall through to ``__unknown__``, which over-counts by
+    design: an undercount would let ``TokenBudgetMiddleware`` run past budget.
+    """
+    found = resolve_pricing(model, pricing_table)
+    if found is not None:
+        return found
     return pricing_table.get("__unknown__", ModelPricing(1.0, 3.0))
 
 

@@ -17,6 +17,7 @@ from agentix.core.middleware.cost_tracking import (
     CostTrackingMiddleware,
     ModelPricing,
     compute_cost_usd,
+    resolve_pricing,
 )
 from agentix.core.middleware.dangling_tool_call import DanglingToolCallMiddleware
 from agentix.core.middleware.loop_detection import LoopDetectionMiddleware
@@ -43,5 +44,6 @@ __all__ = [
     "TrajectoryCaptureMiddleware",
     "compose_chain",
     "compute_cost_usd",
+    "resolve_pricing",
     "validate_order",
 ]

@@ -16,6 +16,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from agentix.config import LlmPricingConfig
+
 _DEFAULT_CONFIG = Path.home() / ".agentix" / "config.yaml"
 _DEFAULT_SOCKET = Path.home() / ".agentix" / "agentixd.sock"
 
@@ -39,6 +41,10 @@ class DaemonConfig:
     driver_specs: list[dict[str, Any]] = field(default_factory=list)
     plugin_packages: list[str] = field(default_factory=list)
     budget_usd: float = 200.0
+    # Parsed ``llm_pricing:`` block. Passed into KernelConfig by build_kernel so
+    # the cost recorder and TokenBudget use the operator's real rates; an empty
+    # config means every model falls back to the over-counting __unknown__ row.
+    llm_pricing: LlmPricingConfig = field(default_factory=LlmPricingConfig)
     socket_path: Path = field(default_factory=lambda: _DEFAULT_SOCKET)
     config_path: Path = field(default_factory=lambda: _DEFAULT_CONFIG)
     # Pre-shared secret for POST /admin/plugins/register. If None, endpoint returns 503.
@@ -94,6 +100,7 @@ def load_daemon_config(path: Path | None = None) -> DaemonConfig:
         driver_specs=raw.get("drivers", []),
         plugin_packages=raw.get("plugin_packages", []),
         budget_usd=float(raw.get("budget_usd", 200.0)),
+        llm_pricing=LlmPricingConfig.from_raw(raw.get("llm_pricing")),
         socket_path=socket_path,
         config_path=resolved,
         admin_token=os.environ.get("AGENTIXD_ADMIN_TOKEN"),

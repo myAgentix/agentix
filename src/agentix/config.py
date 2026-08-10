@@ -61,16 +61,81 @@ class LlmPricingConfig:
     Keys match the provider-returned model id. Missing models fall through to
     ``FALLBACK_PRICING['__unknown__']`` (over-counts). Date-stamped ids
     (``some-model-4-6-20260101`` → ``some-model-4-6``) are prefix-matched
-    by ``cost_tracking._lookup_pricing``.
+    by ``cost_tracking.resolve_pricing``.
+
+    ``usd_eur_rate`` / ``rate_as_of`` exist for **display only** — the CLI shows
+    per-million rates in EUR. Stored cost stays USD end to end (``cost_usd``,
+    ``budget_usd``), so no conversion ever touches recorded data. The as-of date
+    is surfaced with every converted figure: a static rate is not live FX and
+    must not read like one.
     """
 
     models: dict[str, ModelPricing] = field(default_factory=dict)
+    usd_eur_rate: float | None = None
+    rate_as_of: str | None = None
 
     def as_table(self) -> dict[str, ModelPricing]:
         """Return the pricing table merged with the ``__unknown__`` fallback."""
         from agentix.core.middleware.cost_tracking import FALLBACK_PRICING
 
         return {**FALLBACK_PRICING, **self.models}
+
+    @classmethod
+    def from_raw(cls, block: object) -> LlmPricingConfig:
+        """Parse the ``llm_pricing:`` YAML block. The single conversion point.
+
+        Both config loaders (``agentixd._config`` and ``agentix_cli._config``)
+        read the same file, so the parse lives here rather than being written
+        twice. Absent / non-mapping block → an empty config, which is valid.
+
+        A malformed model entry is skipped with a warning rather than raised:
+        one bad price must not stop the daemon from booting. A model missing
+        from the resulting table simply falls back to the over-counting
+        ``__unknown__`` row, which is the safe direction.
+        """
+        import structlog
+
+        from agentix.core.middleware.cost_tracking import ModelPricing as _MP
+
+        log = structlog.get_logger(__name__)
+        if not isinstance(block, dict):
+            return cls()
+
+        models: dict[str, _MP] = {}
+        raw_models = block.get("models")
+        if isinstance(raw_models, dict):
+            for model_id, entry in raw_models.items():
+                if not isinstance(entry, dict):
+                    log.warning("llm_pricing.entry_not_a_mapping", model=str(model_id))
+                    continue
+                try:
+                    models[str(model_id)] = _MP(
+                        input_per_million=float(entry["input_per_million"]),
+                        output_per_million=float(entry["output_per_million"]),
+                        cached_input_per_million=float(entry.get("cached_input_per_million", 0.0)),
+                    )
+                except (KeyError, TypeError, ValueError) as exc:
+                    log.warning("llm_pricing.entry_invalid", model=str(model_id), error=str(exc)[:120])
+
+        rate = block.get("usd_eur_rate")
+        parsed_rate: float | None = None
+        if rate is not None:
+            try:
+                parsed_rate = float(rate)
+            except (TypeError, ValueError):
+                log.warning("llm_pricing.rate_invalid", value=str(rate)[:40])
+            else:
+                # A non-positive rate would silently zero every displayed price.
+                if parsed_rate <= 0:
+                    log.warning("llm_pricing.rate_not_positive", value=parsed_rate)
+                    parsed_rate = None
+
+        as_of = block.get("rate_as_of")
+        return cls(
+            models=models,
+            usd_eur_rate=parsed_rate,
+            rate_as_of=str(as_of) if as_of is not None else None,
+        )
 
 
 @dataclass(frozen=True)

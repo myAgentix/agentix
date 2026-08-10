@@ -50,12 +50,39 @@ drivers:
 
 ## `KernelConfig.llm_pricing`
 
+```yaml
+llm_pricing:
+  # Display only — the CLI shows per-million rates in EUR. Stored cost stays USD.
+  usd_eur_rate: 0.92
+  rate_as_of: 2026-08-01
+  models:
+    deepseek-v4-flash: {input_per_million: 0.27, output_per_million: 1.10}
+    some-model-4-6: {input_per_million: 3.00, output_per_million: 15.00, cached_input_per_million: 0.30}
+```
+
+Rates are **USD per million tokens**. `cached_input_per_million` defaults to 0.
+Parsed by `LlmPricingConfig.from_raw()` — the single conversion point, used by both
+`agentixd._config` and `agentix_cli._config`. A malformed model entry, or a
+non-positive `usd_eur_rate`, is skipped with a warning rather than raised: one bad
+price must not stop the daemon booting.
+
 Empty `llm_pricing` is valid: any model id missing from the table falls through to
-`FALLBACK_PRICING['__unknown__']` in `CostTrackingMiddleware` (over-counts rather
-than under-counts). Date-stamped model ids are prefix-matched. See the field
-docstring in `config.py` and `core/middleware/cost_tracking.py`. Recorded spend is
-chat-only in v0.5 ([`budgets.md`](budgets.md) §3); `DriverDescriptor.pricing_ref =
-None` marks non-token-priced drivers.
+`FALLBACK_PRICING['__unknown__']` (over-counts rather than under-counts), and the
+daemon logs a warning at boot so the estimate isn't mistaken for real accounting.
+Date-stamped model ids are prefix-matched (`some-model-4-6-20260101` →
+`some-model-4-6`). See the field docstring in `config.py` and
+`core/middleware/cost_tracking.py`. Recorded spend is chat-only in v0.5
+([`budgets.md`](budgets.md) §3); `DriverDescriptor.pricing_ref = None` marks
+non-token-priced drivers.
+
+**Two lookups, deliberately different.** `resolve_pricing()` returns the configured
+price or `None`; `_lookup_pricing()` wraps it and applies the `__unknown__` default.
+Costing always needs a number; **display** must distinguish a real rate from a
+placeholder, so `agentix model list` and `agentix driver show` render an unpriced
+model as `—` and never show the fallback as a price.
+
+Prior to this being wired, the block was documented but parsed nowhere — every model
+was costed by the fallback regardless of configuration.
 
 Cluster-wide secret policy (fail-fast in stag/prod, secret vs publishable) lives in
 [`ludo-agent/docs/cluster/env-and-secrets.md`](https://github.com/Ludo-Odoo-Migrations/ludo-agent/blob/main/docs/cluster/env-and-secrets.md);

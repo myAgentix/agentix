@@ -10,9 +10,25 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from agentix.config import LlmPricingConfig
 
 _DEFAULT_CONFIG = Path.home() / ".agentix" / "config.yaml"
+
+
+def _empty_pricing() -> LlmPricingConfig:
+    """Lazy default for CliConfig.llm_pricing.
+
+    ``agentix.config`` pulls ``agentix.storage`` at module level (~150ms), and
+    every CLI invocation would pay it just to construct a config object. The
+    kernel import is deferred to the moment pricing is actually parsed or used,
+    matching how the commands defer their kernel imports.
+    """
+    from agentix.config import LlmPricingConfig
+
+    return LlmPricingConfig()
 
 
 @dataclass
@@ -35,10 +51,20 @@ class CliConfig:
     skills_root: Path | None = None
     drivers: list[CliDriverSpec] = field(default_factory=list)
     budget_usd: float = 200.0
+    # Parsed ``llm_pricing:`` block — per-million rates the model-choice commands
+    # display, plus the display-only USD->EUR rate. Empty models dict = unconfigured.
+    llm_pricing: LlmPricingConfig = field(default_factory=_empty_pricing)
     config_path: Path = field(default_factory=lambda: _DEFAULT_CONFIG)
 
     # Raw YAML for pass-through display
     _raw: dict[str, Any] = field(default_factory=dict, repr=False)
+
+
+def _parse_pricing(block: object) -> LlmPricingConfig:
+    """Parse the ``llm_pricing:`` block via the kernel's single parser."""
+    from agentix.config import LlmPricingConfig
+
+    return LlmPricingConfig.from_raw(block)
 
 
 def load_config(path: Path | None = None) -> CliConfig:
@@ -85,6 +111,7 @@ def load_config(path: Path | None = None) -> CliConfig:
         skills_root=_path("skills_root"),
         drivers=drivers,
         budget_usd=float(raw.get("budget_usd", 200.0)),
+        llm_pricing=_parse_pricing(raw.get("llm_pricing")),
         config_path=resolved,
         _raw=raw,
     )

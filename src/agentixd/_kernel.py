@@ -176,7 +176,20 @@ async def build_kernel(cfg: DaemonConfig) -> KernelState:
         memory_path=cfg.memory_path,
         budget_usd=cfg.budget_usd,
         drivers=driver_specs,
+        # Without this the field defaulted to empty and every model was costed by
+        # the over-counting ``__unknown__`` row, silently ignoring the operator's
+        # ``llm_pricing:`` block. build_drivers passes the table to
+        # CostRecordingChatDriver.
+        llm_pricing=cfg.llm_pricing,
     )
+    if cfg.llm_pricing.models:
+        log.info("llm pricing loaded", models=len(cfg.llm_pricing.models))
+    else:
+        log.warning(
+            "no llm_pricing configured — model spend is estimated with the "
+            "__unknown__ fallback rate, which over-counts",
+            config_path=str(cfg.config_path),
+        )
 
     try:
         state.registry = build_drivers(kernel_cfg, sqlite=state.sqlite)

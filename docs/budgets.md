@@ -77,6 +77,12 @@ immediately after the upstream returns.
   model-id tails (`-<digits>`) so `some-model-20250101` still resolves to its family row;
   a total miss falls to `FALLBACK_PRICING["__unknown__"]`, which deliberately
   **over-counts** — a wrong price must never under-count and run past the cap.
+  The `llm_pricing:` block now actually reaches this table: `load_daemon_config` parses
+  it onto `DaemonConfig` and `build_kernel` passes it into `KernelConfig`. Until that
+  was wired the field always defaulted empty, so recorded `cost_usd` and the budget cap
+  ran on the fallback rate for every model no matter what an operator configured.
+  The CLI surfaces the same rates for model choice (`agentix model list <provider>`,
+  `agentix driver show <key>`), converted to EUR for display only.
 - `CostTrackingMiddleware` is **telemetry-only**: it stamps `turn.cost_usd`, computes
   the cache-read ratio diagnostic, and emits a `cost.turn_telemetry` log line per turn.
   It no longer writes SQLite. The `persist_to_sqlite=True` constructor flag re-enables
