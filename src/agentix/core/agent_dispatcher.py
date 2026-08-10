@@ -139,8 +139,10 @@ class AgentDispatcher:
         """Run the agent loop for a single engine turn."""
         # The per-turn menu carries only advertised tools; unadvertised ones
         # stay resolvable below (facades dispatch to them, verifiers resolve,
-        # and an exact-name call still executes).
-        specs = [tool_to_spec(tool) for tool in self._registry.all_tools() if getattr(tool, "advertised", True)]
+        # and an exact-name call still executes). ``advertised_tools()`` owns
+        # that rule and folds in the tools of every active driver surface, so
+        # a mounted-but-inactive driver costs zero menu tokens.
+        specs = [tool_to_spec(tool) for tool in self._registry.advertised_tools()]
         ctx = self._ctx_factory(turn)
         iteration = 0
         final_assistant_content: str | None = None
@@ -537,7 +539,7 @@ class AgentDispatcher:
                     error_details={
                         "unknown_tool": call.name,
                         "suggestion": suggestion,
-                        "registered_tools": sorted(t.name for t in self._registry.all_tools()),
+                        "registered_tools": sorted(t.name for t in self._registry.resolvable_tools()),
                     },
                 )
             raise AgentToolNotInRegistry(call.name) from exc
@@ -682,7 +684,7 @@ def _suggest_tool_name(requested: str, registry: ToolRegistry) -> str | None:
     """
     if not requested:
         return None
-    registered = {t.name for t in registry.all_tools()}
+    registered = {t.name for t in registry.resolvable_tools()}
 
     # Strip all <...> tags and surrounding noise.
     cleaned = _XML_TAG_RE.sub("", requested)

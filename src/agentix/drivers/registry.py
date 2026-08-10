@@ -78,7 +78,10 @@ class DriverRegistry:
         # scope="session" specs: name -> per-credential builder (seam #13 lease path).
         self._leasables: dict[str, Callable[[Mapping[str, object]], Driver]] = {}
         # Open leases keyed by the session id bound at lease time (None = unbound).
-        self._active_leases: dict[str | None, list[Driver]] = {}
+        # Each entry is (leasable name, instance): a lease-built driver's
+        # descriptor.name is instance-specific (e.g. "odoo:mydb"), so the name
+        # leased *by* has to be carried separately for ``leased()`` to match.
+        self._active_leases: dict[str | None, list[tuple[str, Driver]]] = {}
         # (base object-store name, namespace) -> bucket-scoped driver (memoized).
         self._scoped_object_stores: dict[tuple[str, str], ObjectStoreDriver] = {}
 
@@ -130,26 +133,43 @@ class DriverRegistry:
 
     def _build_lease(self, name: str, credentials: Mapping[str, object], session_id: str | None) -> Driver:
         driver = self._leasables[name](credentials)
-        self._active_leases.setdefault(session_id, []).append(driver)
+        self._active_leases.setdefault(session_id, []).append((name, driver))
         log.info("driver.lease", driver=name, session_id=session_id)
         return driver
 
     async def _close_lease(self, driver: Driver, session_id: str | None) -> None:
         open_leases = self._active_leases.get(session_id, [])
-        if driver in open_leases:
-            open_leases.remove(driver)
-            if not open_leases:
-                self._active_leases.pop(session_id, None)
+        for entry in list(open_leases):
+            if entry[1] is driver:
+                open_leases.remove(entry)
+        if session_id in self._active_leases and not open_leases:
+            self._active_leases.pop(session_id, None)
         try:
             await driver.aclose()
         except Exception as exc:  # pragma: no cover — best-effort close
             log.warning("driver_registry.lease_close_failed", error=str(exc)[:200])
         log.info("driver.lease_closed", driver=driver.descriptor.name, session_id=session_id)
 
+    def leased(self, name: str) -> Driver | None:
+        """The open lease of ``name`` for the current session, or ``None``.
+
+        The read counterpart to :meth:`lease`: a driver's tool surface needs
+        its own handle without the app threading it through ToolContext
+        (spec 001). Session binding comes from the ``current_session_id``
+        contextvar, so one session never sees another's lease. ``name`` is the
+        name leased *by* (e.g. ``"odoo-erp"``), not the instance descriptor.
+
+        Most-recent lease wins when a session holds several of the same name.
+        """
+        for leased_name, driver in reversed(self._active_leases.get(current_session_id.get(), [])):
+            if leased_name == name:
+                return driver
+        return None
+
     async def aclose_session_leases(self, session_id: str) -> None:
         """Teardown backstop: close every lease still open for ``session_id``.
         The context manager is the primary lifetime; this catches leaks."""
-        for driver in self._active_leases.pop(session_id, []):
+        for _leased_name, driver in self._active_leases.pop(session_id, []):
             try:
                 await driver.aclose()
             except Exception as exc:  # pragma: no cover — best-effort close
@@ -281,7 +301,7 @@ class DriverRegistry:
             except Exception as exc:  # pragma: no cover — best-effort close
                 log.warning("driver_registry.close_failed", driver=name, error=str(exc)[:200])
         for session_id in list(self._active_leases):
-            for driver in self._active_leases.pop(session_id, []):
+            for _leased_name, driver in self._active_leases.pop(session_id, []):
                 try:
                     await driver.aclose()
                 except Exception as exc:  # pragma: no cover — best-effort close

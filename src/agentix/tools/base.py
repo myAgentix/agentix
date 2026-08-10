@@ -58,12 +58,11 @@ class ToolContext:
     sqlite: SqliteStore
     minio: MinioStore
     memory: MemoryStore
-    # App-supplied remote clients (e.g. a source/target vendor-client pair).
-    # Kept kernel-agnostic (``Any``) so the kernel takes no dependency on any app's
-    # client type; the app constructs the context with its own concrete clients and
-    # the tools that need them assert presence via ``require_source``/``require_target``.
-    source: Any = None
-    target: Any = None
+    # NOTE: the untyped ``source``/``target`` client slots were removed with
+    # spec 001. A driver's tools now obtain their own handle from the driver's
+    # own lease via its ToolSurface (``DriverRegistry.leased()``), so client
+    # wiring is no longer the app's responsibility and no kernel type has to
+    # stay ``Any`` to accommodate it.
     dry_run: bool = False
     # Set lazily by SafetyGate / the dispatcher so tools can look each other
     # up (e.g. to call a declared verifier).
@@ -84,16 +83,6 @@ class ToolContext:
     # (e.g. kernel skills + a driver's bundled skills).  Default "skills" = the
     # agent's own per-process dir; set per-session by the orchestrator.
     skills_root: str | list[str] = "skills"
-
-    def require_source(self) -> Any:
-        if self.source is None:
-            raise RuntimeError("tool requires a source client but none configured")
-        return self.source
-
-    def require_target(self) -> Any:
-        if self.target is None:
-            raise RuntimeError("tool requires a target client but none configured")
-        return self.target
 
     async def progress(self, percent: float | None = None, message: str = "") -> None:
         """In-flight progress event to ``tool_progress``. Best-effort.
