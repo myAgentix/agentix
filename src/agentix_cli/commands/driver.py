@@ -266,6 +266,48 @@ def _restart_hint() -> str:
     return "Restart the daemon to apply:  systemctl --user restart agentixd  (or Ctrl-C + agentixd)"
 
 
+def _pricing_rows(key: str) -> list[tuple[str, str]]:
+    """Per-million-token rate rows for a driver's configured model.
+
+    Returns [] when the driver has no model configured or no rates are set —
+    ``driver show`` then looks exactly as it did before. Resolution reuses the
+    kernel's prefix-aware ``resolve_pricing`` so a date-stamped model id still
+    matches its family's row. The ``__unknown__`` fallback is never shown as a
+    price; an unpriced model reports itself as such.
+    """
+    from agentix.core.middleware.cost_tracking import resolve_pricing
+    from agentix_cli._output import price_cells, price_currency, price_footnote
+
+    cfg = load_config(None)
+    pricing_cfg = cfg.llm_pricing
+    if not pricing_cfg.models:
+        return []
+    model = next((d.model for d in cfg.drivers if (d.driver == key or d.name == key) and d.model), None)
+    if not model:
+        return []
+
+    # Configured prices only — as_table() would merge in the __unknown__ fallback,
+    # which must never be presented as this model's price.
+    pricing = resolve_pricing(model, pricing_cfg.models)
+    if pricing is None:
+        return [("Model", model), ("Token price", "not configured under llm_pricing:")]
+
+    in_cell, out_cell = price_cells(pricing, pricing_cfg)
+    unit = price_currency(pricing_cfg)
+    rows = [
+        ("Model", model),
+        ("Input / M tokens", f"{in_cell} {unit}"),
+        ("Output / M tokens", f"{out_cell} {unit}"),
+    ]
+    if pricing.cached_input_per_million:
+        cached = pricing.cached_input_per_million * (pricing_cfg.usd_eur_rate or 1.0)
+        rows.append(("Cached input / M", f"{cached:.2f} {unit}"))
+    note = price_footnote(pricing_cfg)
+    if note:
+        rows.append(("Rate", note))
+    return rows
+
+
 @app.command("list")
 def driver_list(
     active: bool = typer.Option(False, "--active", "-a", help="Show drivers configured in ~/.agentix/config.yaml"),
@@ -367,6 +409,7 @@ def driver_show(key: str = typer.Argument(..., help="Driver key (e.g. melious, o
         ("SDK / package", sdk or "(none)"),
         ("Available", "yes" if (status == "planned" or _sdk_installed(sdk)) else "not installed"),
     ]
+    rows.extend(_pricing_rows(key))
     if key in _VENDOR_KEYS:
         if meta.get("repo"):
             rows.append(("Repo (SSH)", meta["repo"]))

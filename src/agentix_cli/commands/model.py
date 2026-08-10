@@ -14,7 +14,14 @@ from typing import Annotated
 import typer
 
 from agentix_cli._config import load_config
-from agentix_cli._output import error, make_table, print_table
+from agentix_cli._output import (
+    error,
+    make_table,
+    price_cells,
+    price_columns,
+    price_footnote,
+    print_table,
+)
 from agentix_cli.commands.driver import (
     _DRIVER_META,
     _install_label,
@@ -105,8 +112,39 @@ def model_list(
         typer.echo(f"{provider} returned no models.")
         return
 
-    t = make_table("Model ID")
+    # Pricing is operator config, never returned by a provider's /models endpoint.
+    # With no rates configured, print exactly the pre-pricing single-column table:
+    # empty cost columns would be noise, and the fallback rate is not a price.
+    from agentix.core.middleware.cost_tracking import resolve_pricing
+
+    cfg = load_config(config_path)
+    pricing_cfg = cfg.llm_pricing
+    # The CONFIGURED prices only — deliberately not as_table(), which merges in the
+    # __unknown__ fallback. Display must distinguish a real rate from a placeholder.
+    table = pricing_cfg.models
+
+    if not table:
+        t = make_table("Model ID")
+        for mid in models:
+            t.add_row(mid)
+        print_table(t)
+        typer.echo(f"\n{len(models)} model(s) from {provider}")
+        typer.echo("no llm_pricing configured — add rates to show cost per million tokens")
+        return
+
+    in_col, out_col = price_columns(pricing_cfg)
+    t = make_table("Model ID", in_col, out_col)
+    unpriced = 0
     for mid in models:
-        t.add_row(mid)
+        pricing = resolve_pricing(mid, table)
+        if pricing is None:
+            unpriced += 1
+        t.add_row(mid, *price_cells(pricing, pricing_cfg))
     print_table(t)
+
     typer.echo(f"\n{len(models)} model(s) from {provider}")
+    note = price_footnote(pricing_cfg)
+    if note:
+        typer.echo(note)
+    if unpriced:
+        typer.echo(f"{unpriced} of {len(models)} model(s) unpriced — add rates under llm_pricing: in {cfg.config_path}")
