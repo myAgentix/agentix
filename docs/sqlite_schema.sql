@@ -104,6 +104,31 @@ CREATE TABLE IF NOT EXISTS tool_progress (
         created_at TEXT NOT NULL
     );
 CREATE INDEX IF NOT EXISTS idx_tool_progress_session ON tool_progress (session_id, created_at);
+-- One row per billed LLM call. `provider_id`/`location` are per-call data-residency
+-- facts reported by the gateway and can differ between two calls to the same model.
+-- `credits` is the gateway's billed amount in its own unit; `cost_usd` is that
+-- converted with the operator's credit rate, or a local estimate (`cost_source`).
+CREATE TABLE IF NOT EXISTS llm_calls (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+        provider TEXT NOT NULL,
+        model TEXT NOT NULL,
+        provider_id TEXT,
+        location TEXT,
+        input_tokens INTEGER NOT NULL DEFAULT 0,
+        output_tokens INTEGER NOT NULL DEFAULT 0,
+        cached_tokens INTEGER NOT NULL DEFAULT 0,
+        credits REAL,
+        cost_usd REAL NOT NULL DEFAULT 0.0,
+        cost_source TEXT NOT NULL,
+        energy_kwh REAL,
+        carbon_g_co2 REAL,
+        system_fingerprint TEXT,
+        finish_reason TEXT,
+        created_at TEXT NOT NULL
+    );
+CREATE INDEX IF NOT EXISTS idx_llm_calls_session ON llm_calls (session_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_llm_calls_location ON llm_calls (location, created_at);
 CREATE VIRTUAL TABLE IF NOT EXISTS turns_fts USING fts5(
         session_id,
         tool_name,

@@ -118,10 +118,32 @@ class _FakeCompletion:
         self.usage = _FakeUsage()
 
 
+class _FakeRawResponse:
+    """Stands in for the SDK's raw-response wrapper: parsed body + headers."""
+
+    def __init__(self, response: _FakeCompletion, headers: dict[str, str] | None = None) -> None:
+        self._response = response
+        self.headers = headers or {}
+
+    def parse(self) -> _FakeCompletion:
+        return self._response
+
+
+class _FakeRawCompletions:
+    def __init__(self, parent: _FakeCompletionsClient) -> None:
+        self._parent = parent
+
+    async def create(self, **kwargs: object) -> _FakeRawResponse:
+        self._parent.kwargs = kwargs
+        return _FakeRawResponse(self._parent._response, self._parent.headers)
+
+
 class _FakeCompletionsClient:
     def __init__(self, response: _FakeCompletion) -> None:
         self.kwargs: dict[str, object] = {}
         self._response = response
+        self.headers: dict[str, str] = {}
+        self.with_raw_response = _FakeRawCompletions(self)
 
     async def create(self, **kwargs: object) -> _FakeCompletion:
         self.kwargs = kwargs

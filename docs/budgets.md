@@ -60,10 +60,27 @@ immediately after the upstream returns.
   skips any turn-level recording — yet the LLM call was already billed upstream. A
   runaway model could emit 100k tokens, the turn abort on a tool error, and the cap never
   fire. Call-boundary recording closes that silent-breach window.
-- **Cost source hierarchy:** an upstream-reported `response.raw["cost_usd"]` is
-  preferred (gateways know their own prices); otherwise `compute_cost_usd` estimates
-  locally from the pricing table. If the inner provider raises, nothing is recorded —
-  the call wasn't billed.
+- **Cost source hierarchy** (most to least authoritative; the chosen one is recorded as
+  `cost_source` on the `llm_calls` row, so a spend report can say which figures are real):
+  1. `raw["cost_usd"]` — an upstream-reported **currency** amount (HUBLE forwards this).
+     Matches the invoice exactly. `cost_source="reported"`.
+  2. `raw["billing_credits"] x llm_pricing.usd_per_credit` — the gateway's own billed
+     **credits** (melious `billing_cost.credits`), converted with the operator's credit
+     rate. Authoritative on usage; only the rate is local. `cost_source="credits"`.
+  3. `compute_cost_usd` — local per-token estimate from the pricing table.
+     `cost_source="estimated"`.
+
+  Credits arriving with no `usd_per_credit` configured fall back to the estimate and log
+  `cost_recorder.credits_unpriced` — the gateway told us what it charged and we could not
+  price it, so the recorded number will not match the invoice. The credits are still
+  persisted, so cost can be re-derived once a rate exists. If the inner provider raises,
+  nothing is recorded — the call wasn't billed.
+- **Per-call provenance** — every billed call also writes one `llm_calls` row: tokens,
+  credits, `cost_usd`, `cost_source`, `provider_id` / `location` (per-call data residency,
+  which can vary between calls to the same model), `energy_kwh` / `carbon_g_co2`,
+  `system_fingerprint` and `finish_reason`. The session row stays the money ledger; this
+  table is the audit trail. Best-effort like the ledger write: a failure logs
+  `sqlite.llm_call_failed` and never breaks the model round-trip.
 - **Session binding** flows via the `current_session_id` ContextVar
   (`bind_session` / `session_scope`), so concurrent sessions never cross-contaminate.
   When the ContextVar is unset at call time, cost is not recorded and a loud

@@ -113,7 +113,11 @@ class OpenAIChatDriver:
         kwargs.update(request.extra_params)
 
         try:
-            response = await self._client.chat.completions.create(**kwargs)
+            # ``with_raw_response`` so the HTTP headers survive alongside the
+            # parsed body: the wire reports remaining request quota only in
+            # ``x-ratelimit-*``, which the parsed-only path discards entirely.
+            http = await self._client.chat.completions.with_raw_response.create(**kwargs)
+            response = http.parse()
         except openai.RateLimitError as e:
             raise DriverRateLimited(str(e), driver=self.name) from e
         except openai.APIStatusError as e:
@@ -126,8 +130,38 @@ class OpenAIChatDriver:
         choice = response.choices[0]
         usage = response.usage
         tool_calls = _parse_openai_tool_calls(choice.message)
+        reasoning = str(getattr(choice.message, "reasoning_content", None) or "")
+        content = choice.message.content or ""
+
+        raw: dict[str, Any] = {"id": response.id}
+        fingerprint = getattr(response, "system_fingerprint", None)
+        if fingerprint:
+            # The serving build (e.g. "vllm-0.22.0-tp4-…"). Absent on some models;
+            # the only signal that a silent backend swap is behind a behaviour change.
+            raw["system_fingerprint"] = str(fingerprint)
+        credits = _billed_credits(response)
+        if credits is not None:
+            raw["billing_credits"] = credits
+        provenance = _provenance(response)
+        if provenance:
+            raw["provenance"] = provenance
+        limits = _rate_limits(http.headers)
+        if limits:
+            raw["rate_limit"] = limits
+
+        if not content and reasoning:
+            # Not an empty answer — the output budget went to the reasoning pass.
+            log.warning(
+                "openai_compat.content_empty_reasoning_only",
+                driver=self.name,
+                model=response.model,
+                finish_reason=choice.finish_reason,
+                reasoning_chars=len(reasoning),
+                hint="raise max_tokens: reasoning is billed inside output_tokens",
+            )
+
         return ChatResponse(
-            content=choice.message.content or "",
+            content=content,
             usage=TokenUsage(
                 input_tokens=int(getattr(usage, "prompt_tokens", 0) or 0),
                 output_tokens=int(getattr(usage, "completion_tokens", 0) or 0),
@@ -136,7 +170,8 @@ class OpenAIChatDriver:
             model=response.model,
             finish_reason=choice.finish_reason,
             tool_calls=tool_calls,
-            raw={"id": response.id},
+            reasoning=reasoning,
+            raw=raw,
         )
 
     async def list_models(self) -> list[str]:
@@ -157,6 +192,100 @@ class OpenAIChatDriver:
 
     async def aclose(self) -> None:
         await self._client.close()
+
+
+def _extra(obj: Any, key: str) -> Any:
+    """Read a non-standard response field the OpenAI SDK parsed as an extra.
+
+    The SDK keeps unknown keys on ``model_extra`` and also exposes them as
+    attributes. Reads both, tolerating either shape, because these fields are
+    gateway extensions: absent on OpenAI itself and on most compatible wires.
+    """
+    extra = getattr(obj, "model_extra", None)
+    if isinstance(extra, dict) and key in extra:
+        return extra[key]
+    return getattr(obj, key, None)
+
+
+def _billed_credits(response: Any) -> float | None:
+    """Credits the gateway actually billed for this call, if reported.
+
+    Melious returns ``billing_cost: {"credits": "0.0000144", "paid_with":
+    "credits", …}`` — note the value is a STRING and the unit is credits, not
+    currency. Converting to money needs an operator-supplied credit rate
+    (``llm_pricing.usd_per_credit``); that conversion belongs to the cost
+    recorder, not here. Returns None when unreported or unparseable, so the
+    recorder falls back to its local estimate.
+    """
+    billing = _extra(response, "billing_cost")
+    if not isinstance(billing, dict):
+        return None
+    value = billing.get("credits")
+    if value is None:
+        return None
+    try:
+        credits = float(value)
+    except (TypeError, ValueError):
+        return None
+    # Reject non-finite / negative; 0.0 is legitimate (a free or cached call).
+    if credits < 0 or credits != credits:
+        return None
+    return credits
+
+
+def _provenance(response: Any) -> dict[str, Any]:
+    """Where the call was actually served, plus its footprint.
+
+    Melious returns ``environment_impact: {"provider_id": "regolo", "location":
+    "IT", "energy_kwh": …, "carbon_g_co2": …, …}``. ``location`` and
+    ``provider_id`` are per-call **data-residency** facts and can vary between
+    calls to the same model, so they are captured per response rather than
+    inferred once from config.
+    """
+    impact = _extra(response, "environment_impact")
+    if not isinstance(impact, dict):
+        return {}
+    out: dict[str, Any] = {}
+    for key in ("provider_id", "location"):
+        value = impact.get(key)
+        if value:
+            out[key] = str(value)
+    for key in ("energy_kwh", "carbon_g_co2", "water_liters", "renewable_percent"):
+        value = impact.get(key)
+        if value is None:
+            continue
+        try:
+            out[key] = float(value)
+        except (TypeError, ValueError):
+            continue
+    return out
+
+
+def _rate_limits(headers: Any) -> dict[str, int]:
+    """Remaining request quota from ``x-ratelimit-*`` response headers.
+
+    Only reachable via ``with_raw_response``. Values are integers on this wire
+    (``reset`` is a unix timestamp); anything unparseable is skipped rather
+    than guessed.
+    """
+    out: dict[str, int] = {}
+    try:
+        getter = headers.get
+    except AttributeError:
+        return out
+    for header, field in (
+        ("x-ratelimit-limit", "limit"),
+        ("x-ratelimit-remaining", "remaining"),
+        ("x-ratelimit-reset", "reset"),
+    ):
+        value = getter(header)
+        if value is None:
+            continue
+        try:
+            out[field] = int(str(value).strip())
+        except (TypeError, ValueError):
+            continue
+    return out
 
 
 def _to_openai(m: Message) -> dict[str, Any]:

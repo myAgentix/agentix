@@ -309,7 +309,12 @@ def build_drivers(
                 from agentix.drivers.chat import ChatDriver
                 from agentix.drivers.cost import CostRecordingChatDriver
 
-                driver = CostRecordingChatDriver(cast(ChatDriver, driver), sqlite=sqlite, pricing_table=pricing_table)
+                driver = CostRecordingChatDriver(
+                    cast(ChatDriver, driver),
+                    sqlite=sqlite,
+                    pricing_table=pricing_table,
+                    usd_per_credit=cfg.llm_pricing.usd_per_credit,
+                )
             chat_members.append(driver)
         elif spec.type == "model" and spec.modality == "embedding":
             if sqlite is None:

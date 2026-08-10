@@ -69,10 +69,16 @@ class CostRecordingChatDriver:
         *,
         sqlite: SqliteStore,
         pricing_table: Mapping[str, ModelPricing] = FALLBACK_PRICING,
+        usd_per_credit: float | None = None,
     ) -> None:
         self._inner = inner
         self._sqlite = sqlite
         self._pricing = pricing_table
+        # USD value of one gateway credit. Gateways that bill in credits report
+        # the exact credits consumed per call but no currency amount, so this is
+        # the one number that turns an authoritative usage figure into money.
+        # None → credit-billed calls fall back to the local per-token estimate.
+        self._usd_per_credit = usd_per_credit
 
     @property
     def name(self) -> str:
@@ -136,24 +142,11 @@ class CostRecordingChatDriver:
             )
             return response
 
-        # Source-of-truth preference for cost:
-        #   1. response.raw["cost_usd"] — the upstream's actual billed
-        #      amount (HUBLE forwards this from melious / its own gateway
-        #      logic). Preferring it makes SQLite cost match the bill
-        #      exactly for any driver that reports it.
-        #   2. compute_cost_usd() — locally-derived estimate using
-        #      FALLBACK_PRICING. Used when the upstream doesn't return
-        #      a cost (most direct provider APIs) OR for models
-        #      not yet in the pricing table (estimate via __unknown__
-        #      fallback — known under-/over-counting; flagged for
-        #      operator awareness in FALLBACK_PRICING).
-        cost = _extract_real_cost(response) or compute_cost_usd(
-            model=response.model,
-            input_tokens=response.usage.input_tokens,
-            output_tokens=response.usage.output_tokens,
-            cached_tokens=response.usage.cached_tokens,
-            pricing_table=self._pricing,
-        )
+        cost, cost_source = self._resolve_cost(response)
+        # Per-call provenance row: where this call was served (data residency)
+        # and which cost figure was authoritative. Independent of the session
+        # ledger update below — best-effort, never raises.
+        await self._record_call(session_id, response, cost, cost_source)
         try:
             await self._sqlite.update_session(
                 session_id,
@@ -181,11 +174,85 @@ class CostRecordingChatDriver:
             provider=self._inner.name,
             model=response.model,
             cost_usd=round(cost, 6),
+            cost_source=cost_source,
             input_tokens=response.usage.input_tokens,
             output_tokens=response.usage.output_tokens,
             cached_tokens=response.usage.cached_tokens,
         )
         return response
+
+    def _resolve_cost(self, response: ChatResponse) -> tuple[float, str]:
+        """Return ``(cost_usd, source)`` by preference of authority.
+
+        1. ``raw["cost_usd"]`` — an upstream-reported currency amount (HUBLE
+           forwards this). Matches the bill exactly.
+        2. ``raw["billing_credits"]`` x ``usd_per_credit`` — the gateway's own
+           billed credits (melious), converted with the operator's credit rate.
+           Authoritative on usage; only the rate is local.
+        3. ``compute_cost_usd()`` — local per-token estimate. Used when nothing
+           is reported, or when credits arrived but no rate is configured, or
+           for models missing from the pricing table (``__unknown__``
+           over-counts by design).
+        """
+        reported = _extract_real_cost(response)
+        if reported is not None:
+            return reported, "reported"
+
+        credits = response.raw.get("billing_credits") if isinstance(response.raw, dict) else None
+        if isinstance(credits, (int, float)) and not isinstance(credits, bool):
+            if self._usd_per_credit is not None:
+                return float(credits) * self._usd_per_credit, "credits"
+            # The gateway told us exactly what it charged and we cannot price
+            # it. Say so once per call: the estimate below will not match the
+            # invoice, and the fix is one config value.
+            log.warning(
+                "cost_recorder.credits_unpriced",
+                provider=self._inner.name,
+                model=response.model,
+                credits=credits,
+                hint="set llm_pricing.usd_per_credit to record billed cost instead of an estimate",
+            )
+
+        return (
+            compute_cost_usd(
+                model=response.model,
+                input_tokens=response.usage.input_tokens,
+                output_tokens=response.usage.output_tokens,
+                cached_tokens=response.usage.cached_tokens,
+                pricing_table=self._pricing,
+            ),
+            "estimated",
+        )
+
+    async def _record_call(
+        self,
+        session_id: str,
+        response: ChatResponse,
+        cost: float,
+        cost_source: str,
+    ) -> None:
+        """Persist the per-call provenance row. Best-effort."""
+        raw = response.raw if isinstance(response.raw, dict) else {}
+        provenance = raw.get("provenance")
+        provenance = provenance if isinstance(provenance, dict) else {}
+        credits = raw.get("billing_credits")
+        await self._sqlite.append_llm_call(
+            session_id=session_id,
+            provider=self._inner.name,
+            model=response.model,
+            input_tokens=response.usage.input_tokens,
+            output_tokens=response.usage.output_tokens,
+            cached_tokens=response.usage.cached_tokens,
+            cost_usd=cost,
+            cost_source=cost_source,
+            credits=float(credits) if isinstance(credits, (int, float)) and not isinstance(credits, bool) else None,
+            provider_id=provenance.get("provider_id"),
+            location=provenance.get("location"),
+            energy_kwh=provenance.get("energy_kwh"),
+            carbon_g_co2=provenance.get("carbon_g_co2"),
+            system_fingerprint=raw.get("system_fingerprint"),
+            finish_reason=response.finish_reason,
+        )
 
     async def aclose(self) -> None:
         """Forward shutdown to the inner driver."""

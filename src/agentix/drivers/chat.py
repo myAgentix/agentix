@@ -110,6 +110,13 @@ class ChatResponse(BaseModel):
     # depending on the wire. The AgentDispatcher loops while this is
     # non-empty.
     tool_calls: list[ToolCall] = Field(default_factory=list)
+    # Separated chain-of-thought, when the wire reports it apart from the
+    # answer (melious/vLLM ``message.reasoning_content``). Billed inside
+    # ``usage.output_tokens``, so a long reasoning pass can exhaust the output
+    # budget and leave ``content`` EMPTY with ``finish_reason="length"``. Kept
+    # first-class rather than buried in ``raw`` so that outcome is explainable
+    # instead of looking like the model returned nothing.
+    reasoning: str = ""
     raw: dict[str, Any] = Field(default_factory=dict)
 
 

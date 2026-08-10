@@ -60,7 +60,28 @@ Vendor-feature knobs are **best-effort**: an adapter that doesn't support one si
 
 `ChatResponse`: `content: str`, `usage: TokenUsage`, `model: str` (the model that actually
 answered), `finish_reason`, `tool_calls: list[ToolCall]` (non-empty ⇒ the dispatcher loops),
-`raw: dict`.
+`reasoning: str`, `raw: dict`.
+
+**`reasoning`** carries separated chain-of-thought when the wire reports it apart from the
+answer (melious/vLLM `message.reasoning_content`). It is billed inside
+`usage.output_tokens`, so a long reasoning pass can exhaust `max_tokens` and leave
+**`content` empty with `finish_reason="length"`** — that is not an empty answer, and the
+adapter logs `openai_compat.content_empty_reasoning_only` when it happens. Raise
+`max_tokens` rather than treating it as a model failure.
+
+**`raw`** carries whatever the wire reported beyond the canonical fields. Nothing is
+required; read defensively. What the OpenAI-compatible adapter puts there today:
+
+| `raw` key | Meaning |
+|---|---|
+| `id` | upstream response id |
+| `system_fingerprint` | serving build (e.g. `vllm-0.22.0-…`); `None` on some models. The only signal that a silent backend swap sits behind a behaviour change |
+| `billing_credits` | credits the gateway actually billed for this call — **credits, not currency** ([`budgets.md`](budgets.md) §3) |
+| `provenance` | `provider_id` / `location` (per-call **data residency**) plus `energy_kwh`, `carbon_g_co2`, `water_liters`, `renewable_percent` |
+| `rate_limit` | `limit` / `remaining` / `reset` from `x-ratelimit-*` — what to throttle or fail over on |
+
+`provenance.location` can differ between two calls to the *same* model, so it is captured
+per response and persisted per call (the `llm_calls` table), never inferred from config.
 
 **Errors** you must handle map into one taxonomy (`drivers/base.py`, canonical in
 [`drivers.md`](drivers.md) §1): `DriverError(*, driver, retryable)` → `DriverRateLimited` /
