@@ -55,8 +55,24 @@ def price_currency(pricing_cfg: LlmPricingConfig) -> str:
 
 def price_columns(pricing_cfg: LlmPricingConfig) -> tuple[str, str]:
     """Column headers for the input / output per-million-token rates."""
-    symbol = "€" if price_currency(pricing_cfg) == "EUR" else "$"
+    return currency_columns(price_currency(pricing_cfg))
+
+
+def currency_columns(currency: str) -> tuple[str, str]:
+    """Column headers for per-million rates quoted in ``currency``."""
+    symbol = {"EUR": "€", "USD": "$"}.get(currency.upper(), f"{currency.upper()} ")
     return f"In {symbol}/M", f"Out {symbol}/M"
+
+
+def price_cell(value: float | None) -> str:
+    """One rate cell — ``None`` renders as the unpriced dash.
+
+    Sub-cent rates are real (embeddings at €0.01/M), so small values keep more
+    decimals rather than rounding to a misleading 0.00.
+    """
+    if value is None:
+        return UNPRICED
+    return f"{value:.4f}".rstrip("0").rstrip(".") if value < 0.1 else f"{value:.2f}"
 
 
 def price_cells(pricing: ModelPricing | None, pricing_cfg: LlmPricingConfig) -> tuple[str, str]:
@@ -69,9 +85,24 @@ def price_cells(pricing: ModelPricing | None, pricing_cfg: LlmPricingConfig) -> 
         return UNPRICED, UNPRICED
     rate = pricing_cfg.usd_eur_rate or 1.0
     return (
-        f"{pricing.input_per_million * rate:.2f}",
-        f"{pricing.output_per_million * rate:.2f}",
+        price_cell(pricing.input_per_million * rate),
+        price_cell(pricing.output_per_million * rate),
     )
+
+
+def usd_factor_for(currency: str, pricing_cfg: LlmPricingConfig) -> float | None:
+    """Factor turning a configured (USD) rate into ``currency``, or ``None``.
+
+    ``None`` means the configured table cannot honestly be shown in the same
+    column as a provider-quoted price — inventing an FX rate on a screen an
+    operator picks a model on is worse than an empty cell.
+    """
+    target = currency.upper()
+    if target == "USD":
+        return 1.0
+    if target == "EUR" and pricing_cfg.usd_eur_rate:
+        return pricing_cfg.usd_eur_rate
+    return None
 
 
 def price_footnote(pricing_cfg: LlmPricingConfig) -> str:

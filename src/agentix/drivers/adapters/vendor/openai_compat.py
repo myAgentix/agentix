@@ -27,6 +27,7 @@ from agentix.drivers.base import (
     DriverRateLimited,
     DriverUnavailable,
 )
+from agentix.drivers.catalogue import ModelInfo, parse_model_meta
 from agentix.drivers.chat import ChatRequest, ChatResponse
 
 log = structlog.get_logger(__name__)
@@ -178,8 +179,33 @@ class OpenAIChatDriver:
         # GET /v1/models on the OpenAI-compatible endpoint. Same error mapping
         # as complete() so callers get the canonical taxonomy. Inherited by every
         # OpenAI-compatible subclass (Melious, NVIDIA, and any out-of-tree one).
+        return [info.id for info in await self.list_model_infos()]
+
+    async def list_model_infos(self) -> list[ModelInfo]:
+        """The model catalogue with whatever metadata the provider publishes.
+
+        Asks for ``?include_meta=true`` — a gateway extension (Melious) that
+        adds a ``_meta`` object per model with type, context window and list
+        price per million tokens. Plain OpenAI-wire endpoints ignore the unknown
+        query param and return the same bare rows, which parse to id-only
+        :class:`ModelInfo`s. A strict endpoint that *rejects* the param is
+        retried without it, so discovery never fails over an optional extra.
+        """
         try:
-            resp = await self._client.models.list()
+            page = await self._list_raw(include_meta=True)
+        except DriverInvalidRequest:
+            log.debug("openai_compat.include_meta_rejected", driver=self.name)
+            page = await self._list_raw(include_meta=False)
+        return sorted(
+            (parse_model_meta(m.id, _extra(m, "_meta")) for m in page.data),
+            key=lambda info: info.id,
+        )
+
+    async def _list_raw(self, *, include_meta: bool) -> Any:
+        """One GET /v1/models, with the driver error taxonomy applied."""
+        query = {"include_meta": "true"} if include_meta else None
+        try:
+            return await self._client.models.list(extra_query=query)
         except openai.RateLimitError as e:
             raise DriverRateLimited(str(e), driver=self.name) from e
         except openai.APIStatusError as e:
@@ -188,7 +214,6 @@ class OpenAIChatDriver:
             raise DriverInvalidRequest(str(e), driver=self.name) from e
         except (openai.APIConnectionError, openai.APITimeoutError) as e:
             raise DriverUnavailable(str(e), driver=self.name) from e
-        return sorted(m.id for m in resp.data)
 
     async def aclose(self) -> None:
         await self._client.close()

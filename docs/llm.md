@@ -111,7 +111,10 @@ Composable levers, most local first:
    (model + knobs), pinning an agent to a model.
 5. **Discovery** — before you pin a `model:`, list what a provider actually serves:
    `agentix model list <provider>` (CLI) or `ChatDriver.list_models()` (code). See providers
-   with `agentix driver providers`.
+   with `agentix driver providers`. Where the provider publishes catalogue metadata
+   (`?include_meta=true`), the listing also shows type, context window and list price per
+   million tokens — `--type chat` narrows it. `list_model_infos()` is the code-level verb
+   for those extras (`agentix.drivers.catalogue.ModelInfo`).
 
 `DriverSpec` fields (`model`, `base_url`, `api_key_env` — the env-var *name*, never the secret)
 are canonical in [`drivers.md`](drivers.md) §6 / [`kernel-config-reference.md`](kernel-config-reference.md).

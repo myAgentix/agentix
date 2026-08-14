@@ -89,6 +89,15 @@ Costing always needs a number; **display** must distinguish a real rate from a
 placeholder, so `agentix model list` and `agentix driver show` render an unpriced
 model as `—` and never show the fallback as a price.
 
+**Config is not the only price source for display.** A gateway that publishes list
+rates in its catalogue (Melious: `GET /v1/models?include_meta=true` → `_meta.pricing`,
+quoted in EUR per million tokens) is authoritative for `agentix model list`: those
+rates need no operator upkeep and win over `llm_pricing`. The configured table only
+fills models the catalogue left unpriced, and only when it can be converted into the
+catalogue's currency (`usd_eur_rate`) — one column never mixes currencies. Catalogue
+prices are display-only advertised rates: recorded `cost_usd` still comes from
+`billing_cost.credits` or the configured table, unchanged.
+
 Prior to this being wired, the block was documented but parsed nowhere — every model
 was costed by the fallback regardless of configuration.
 
