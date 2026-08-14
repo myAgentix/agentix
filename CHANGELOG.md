@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased
+
+### Provider-published model prices in `agentix model list`
+
+- `OpenAIChatDriver.list_model_infos()` — the catalogue with metadata. Requests
+  `GET /v1/models?include_meta=true`; a gateway that supports it (Melious) returns type,
+  context window, max output tokens, reasoning flag and **list price per million tokens**
+  per model. Endpoints that ignore the param behave exactly as before; one that rejects it
+  is retried without. `list_models()` is unchanged for callers, now built on top.
+- New `agentix.drivers.catalogue` (`ModelInfo`, `CataloguePrice`, `parse_model_meta`) —
+  carries the provider's currency rather than converting it, and is display-only: cost
+  accounting still runs off `billing_cost.credits` or the configured `llm_pricing` table.
+- `agentix model list <provider>` shows Type / Context columns and prices sourced from the
+  provider first, `llm_pricing` only for models the catalogue left unpriced (and only when
+  convertible into the catalogue's currency). New `--type chat|embeddings|…` filter.
+
 ## 0.8.0 — vendor-driver purge (BREAKING)
 
 Six shipped provider drivers removed. What remains is the **wire**, not the vendors:
