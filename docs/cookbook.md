@@ -11,6 +11,7 @@ Each recipe is self-contained — pick the one that matches what you need.
 
 ## Table of Contents
 
+0. [End-to-end minimal agent](#0-end-to-end-minimal-agent)
 1. [Your first turn (SDK)](#1-your-first-turn-sdk)
 2. [Write a read-only tool (class-based)](#2-write-a-read-only-tool-class-based)
 3. [Write a read-only tool (@tool decorator)](#3-write-a-read-only-tool-tool-decorator)
@@ -23,6 +24,110 @@ Each recipe is self-contained — pick the one that matches what you need.
 10. [Wire sandbox allowlists](#10-wire-sandbox-allowlists)
 11. [Forward events to your transport](#11-forward-events-to-your-transport)
 12. [Verify your setup with the CLI](#12-verify-your-setup-with-the-cli)
+13. [ToolContext cheat sheet](#13-toolcontext-cheat-sheet)
+14. [Common mistakes (compliance gotchas)](#14-common-mistakes-compliance-gotchas)
+
+---
+
+## 0. End-to-end minimal agent
+
+**When**: You're starting from scratch and want a complete working agent —
+plugin, tool, skill, config, and SDK call — all in one place.
+
+**Project layout**:
+
+```
+myagent/
+  __init__.py
+  plugin.py
+  tools.py
+  skills/
+    greet/
+      SKILL.md
+run.py
+```
+
+**myagent/tools.py**:
+
+```python
+import time
+from pydantic import BaseModel, Field
+from agentix.tools.factory import tool
+from agentix.tools.base import ToolContext, elapsed_ms
+
+class GreetInput(BaseModel):
+    name: str = Field(..., description="Who to greet")
+
+class GreetOutput(BaseModel):
+    message: str
+    latency_ms: int = 0
+
+@tool(mutates_target=False)
+async def greet(params: GreetInput, ctx: ToolContext) -> GreetOutput:
+    """Greet someone by name."""
+    started = time.perf_counter_ns()
+    return GreetOutput(
+        message=f"Hello, {params.name}!",
+        latency_ms=elapsed_ms(started),
+    )
+```
+
+**myagent/skills/greet/SKILL.md**:
+
+```markdown
+---
+name: greet
+description: How to greet users appropriately
+---
+
+# Greet
+
+When the user asks to be greeted, call the `greet` tool with their name.
+If no name is given, use "World".
+```
+
+**myagent/plugin.py**:
+
+```python
+from pathlib import Path
+
+def register(state, tool_registry):
+    from myagent.tools import greet
+    tool_registry.register(greet)
+
+def skills_roots():
+    return [str(Path(__file__).parent / "skills")]
+```
+
+**~/.agentix/config.yaml** (add your plugin):
+
+```yaml
+plugin_packages:
+  - myagent
+```
+
+**run.py** (exercise it):
+
+```python
+import asyncio
+from agentix_sdk.client import AgentixClient
+
+async def main():
+    async with AgentixClient() as client:
+        session = await client.create_session(customer_id="demo")
+        turn = await client.run_turn(session.id, message="Greet Alice")
+        print(turn.content)
+
+asyncio.run(main())
+```
+
+Start the daemon (`agentixd`), then run `python run.py`. The agent will see
+the `greet` tool, consult the skill if needed, and call the tool.
+
+**What's happening**: The plugin registers one tool and one skill root at
+daemon startup. The SDK creates a session and sends a message. The kernel's
+dispatcher sees `greet` in the tool menu, the LLM decides to call it, and
+the result flows back as the turn content. That's the full loop.
 
 ---
 
@@ -215,6 +320,9 @@ class CreateRecordOutput(BaseModel):
     verify_scope: list[int]     # IDs for the verifier to check
     latency_ms: int = 0
 
+# In practice, inject my_api using the builder pattern from Recipe 4:
+#   def build_create_record(my_api) -> FunctionTool: ...
+
 @tool(
     name="create_record",
     description="Create a record in the target system",
@@ -262,6 +370,29 @@ async def verify_create(params: VerifyCreateInput, ctx: ToolContext) -> VerifyCr
 If `verify_scope` is an empty list `[]`, the safety gate skips verification
 (the tool declared it mutated nothing this call).
 
+**Error handling**: When a tool raises an exception, the dispatcher catches it
+and records the error in the turn result — the agent sees the traceback and
+can retry or adjust. You don't need to catch and wrap errors yourself. Just
+let domain exceptions propagate naturally:
+
+```python
+async def call(self, input: BaseModel, ctx: ToolContext) -> BaseModel:
+    params = ensure_input(input, LookupOrderInput)
+    order = await my_api.get(params.order_id)
+    if order is None:
+        raise ValueError(f"order {params.order_id!r} not found")  # agent sees this
+    return LookupOrderOutput(...)
+```
+
+The safety gate raises its own exceptions — you never need to catch these
+in tool code:
+
+| Exception | When | What happens |
+|-----------|------|--------------|
+| `SafetyGateBlocked` | `ctx.dry_run=True` and tool has `mutates_target=True` | Mutation blocked; agent informed |
+| `SafetyInvariantViolated` | Mutating tool has no `verifier` declared | Startup / dispatch error |
+| `SafetyVerifyFailed` | Verifier returned `ok=False` | `rollback()` already ran; agent informed |
+
 **See also**: [tools.md](tools.md) §6 — safety gate flow; [seams.md](seams.md) §2.
 
 ---
@@ -287,9 +418,10 @@ class MyAppSafetyGate(SafetyGate):
     ) -> None:
         """Undo a failed mutation. Called automatically by the gate."""
         if tool.name == "create_record":
-            record_id = getattr(input, "record_id", None)
-            if record_id:
-                await my_api.delete(record_id)
+            # input matches CreateRecordInput from Recipe 5 (model, values)
+            target_model = getattr(input, "model", None)
+            if target_model and model:
+                await my_api.delete(target_model, model)  # model = the affected record
 
     def _resolve_contract(self, ctx, model):
         # Optional: 100% audit for critical models
@@ -437,12 +569,12 @@ def _make_engine(state, session, app_meta):
         dispatcher=state.dispatcher,
     )
 
-async def _pre_turn_hook(state, session):
-    """Async context manager — runs before/after each turn."""
+def _pre_turn_hook(state, session):
+    """Return an async context manager — the daemon calls ``async with hook(state, session):``."""
     from contextlib import asynccontextmanager
 
     @asynccontextmanager
-    async def hook():
+    async def _ctx():
         # Setup: open connections, populate session extras
         state._session_extras[session.id] = {"dry_run": False}
         try:
@@ -451,7 +583,7 @@ async def _pre_turn_hook(state, session):
             # Teardown: close connections, clean up
             state._session_extras.pop(session.id, None)
 
-    return hook()
+    return _ctx()
 ```
 
 **Config**: declare the plugin in `~/.agentix/config.yaml`:
@@ -594,6 +726,23 @@ Pydantic models with `session_id`, `type`, `payload`, `at`, `schema_version`)
 onto the in-process bus. Global sinks see every event regardless of session.
 The bus is fire-and-forget — events are ephemeral, not persisted.
 
+**Event types** (`agentix.event_types.EventType`):
+
+| Type | When emitted |
+|------|-------------|
+| `session_started` | Session created |
+| `session_end` | Session completed |
+| `turn_started` | Turn begins (user message received) |
+| `turn_completed` | Turn ends (assistant response ready) |
+| `job_started` | Job begins (a session decomposes into N jobs) |
+| `job_completed` | Job ends successfully |
+| `job_failed` | Job ends with an error |
+| `model_started` | Per-model processing begins |
+| `model_completed` | Per-model processing ends |
+| `safety_event` | Safety gate action (dry-run block, verify fail, rollback) |
+| `verify_stage` | Per-rung verification progress |
+| `checkpoint_requested` | Operator review milestone (reserved) |
+
 **See also**: [seams.md](seams.md) §11 — events out.
 
 ---
@@ -633,10 +782,153 @@ protocol violations).
 
 ---
 
+## 13. ToolContext cheat sheet
+
+**When**: You're writing a tool and want to know what's available on `ctx`.
+
+Every tool receives a `ToolContext` instance as its second argument. Here's
+what you can do with it:
+
+```python
+from agentix.tools.base import ToolContext
+
+async def call(self, input: BaseModel, ctx: ToolContext) -> BaseModel:
+    # ── Session state ──
+    ctx.session.id               # current session ID
+    ctx.session.customer_id      # who this session belongs to
+    ctx.session.app_meta         # opaque app-specific metadata dict
+
+    # ── Progress reporting ──
+    await ctx.progress(percent=0.5, message="halfway done")
+    # Writes to tool_progress table; best-effort, never throws
+
+    # ── Storage ──
+    ctx.sqlite                   # SqliteStore — operational DB
+    ctx.minio                    # MinioStore — blob checkpoints
+    ctx.memory                   # MemoryStore — episodic pages + learnings
+
+    # ── Memory (store findings for future turns) ──
+    await ctx.memory.write_section(
+        path="ep/discoveries.md",
+        section="New finding",
+        body="The API returns dates in ISO 8601 format",
+    )
+
+    # ── Look up other tools ──
+    if ctx.registry:
+        other = ctx.registry.get("some_tool")
+        result = await other.call(some_input, ctx)
+
+    # ── Embeddings (semantic search) ──
+    if ctx.embeddings:
+        vectors = await ctx.embeddings.embed(["search query"])
+
+    # ── Flags ──
+    ctx.dry_run                  # True = mutations blocked (safety gate)
+    ctx.activated_skill_names    # skills activated for this session
+    ctx.skills_root              # str | list[str] — skill catalog roots
+```
+
+**See also**: `src/agentix/tools/base.py:50` — `ToolContext` definition.
+
+---
+
+## 14. Common mistakes (compliance gotchas)
+
+**When**: Your plugin fails to load, or the daemon refuses to start.
+
+The kernel runs an AST compliance scan on every plugin at startup
+(`agentix.compliance.enforce_plugin_compliance`). Here are the rules and
+how to avoid breaking them:
+
+### 1. No shadowing kernel classes
+
+```python
+# BAD — redefines a kernel concept
+class Session:
+    pass
+
+class ToolContext:
+    pass
+```
+
+Forbidden class names: `Session`, `Turn`, `WorkingMemory`, `ToolContext`,
+`ToolRegistry`, `SkillCatalog`, `Dispatcher`, `KernelState`, `MemoryRegistry`.
+
+**Fix**: Import and use the kernel's class instead of redefining it.
+
+### 2. Tools must use the kernel protocol
+
+```python
+# BAD — async call() without importing agentix.tools
+class MyTool:
+    async def call(self, input, ctx):
+        ...
+```
+
+**Fix**: Import from `agentix.tools.base` or use `@tool` from `agentix.tools.factory`.
+
+### 3. No raw file writes in memory modules
+
+```python
+# BAD — in any file with "memory" in the path
+open("memories/data.md", "w").write(...)
+Path("memories/data.md").write_text(...)
+```
+
+**Fix**: Use `ctx.memory.write_section()` instead.
+
+### 4. No private kernel imports
+
+```python
+# BAD — underscore-prefixed internal modules
+from agentix.core._internal import something
+from agentix.storage._engine import pool
+```
+
+Allowed exceptions: `agentix.storage.memory`, `agentix.storage.registry`,
+`agentix.core.middleware`.
+
+**Fix**: Use the public API surface only.
+
+### 5. No direct LLM access
+
+```python
+# BAD — the kernel is the sole LLM caller
+import openai
+import anthropic
+from agentix.drivers.chat import ChatDriver
+```
+
+This includes all provider SDKs (`openai`, `anthropic`, `mistralai`, `cohere`,
+`ollama`, `litellm`, `transformers`, `google.generativeai`) and the kernel's
+chat adapters.
+
+**Fix**: The kernel calls the LLM for you. Your plugin supplies tools; the
+dispatcher handles prompting.
+
+### 6. Skills must have SKILL.md
+
+Every directory under your `skills/` root must contain a `SKILL.md` file
+(warning severity — won't block startup, but the skill won't load).
+
+### 7. Plugin must define `register(state, tool_registry)`
+
+The `plugin.py` file must have a module-level `register` function with at
+least 2 parameters. Without it, the daemon crashes with `AttributeError` at
+startup.
+
+**Run compliance in CI**: Call `check_driver_compliance(src_root)` from
+`agentix.compliance` in your own test suite to catch violations before
+deployment.
+
+---
+
 ## Quick reference: what goes where
 
 | I want to...                        | Seam    | Recipe |
 |-------------------------------------|---------|--------|
+| See a complete working agent        | All     | [0](#0-end-to-end-minimal-agent) |
 | Talk to the kernel from my app      | SDK     | [1](#1-your-first-turn-sdk) |
 | Give the agent a new capability     | Tool    | [2](#2-write-a-read-only-tool-class-based), [3](#3-write-a-read-only-tool-tool-decorator) |
 | Inject deps into a tool             | Tool    | [4](#4-dependency-injection-for-tools) |
@@ -647,3 +939,5 @@ protocol violations).
 | Extend the sandbox                  | Sandbox | [10](#10-wire-sandbox-allowlists) |
 | Stream events out                   | Events  | [11](#11-forward-events-to-your-transport) |
 | Verify the setup                    | CLI     | [12](#12-verify-your-setup-with-the-cli) |
+| Use ToolContext effectively         | Tool    | [13](#13-toolcontext-cheat-sheet) |
+| Debug compliance failures           | Plugin  | [14](#14-common-mistakes-compliance-gotchas) |
