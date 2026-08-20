@@ -65,6 +65,9 @@ class GitStatusOutput(BaseModel):
     branch: str
     clean: bool
     porcelain: str
+    # SafetyGate verifier signal: True when the working tree changed after the write this call guards.
+    # A no-op / failed write leaves the tree clean, so ok=False and SafetyGate treats it as drift.
+    ok: bool = True
     latency_ms: int = 0
 
 
@@ -85,10 +88,12 @@ class GitStatus(Tool):
         cwd = output_root(ctx)
         branch_proc = await _run_git(["rev-parse", "--abbrev-ref", "HEAD"], cwd=cwd)
         status_proc = await _run_git(["status", "--porcelain"], cwd=cwd)
+        dirty = bool(status_proc.stdout.strip())
         out = GitStatusOutput(
             branch=branch_proc.stdout.strip() or "(detached)",
-            clean=not status_proc.stdout.strip(),
+            clean=not dirty,
             porcelain=status_proc.stdout.strip(),
+            ok=dirty,
             latency_ms=elapsed_ms(started),
         )
         log.info("spike.git_status", branch=out.branch, clean=out.clean)
